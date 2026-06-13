@@ -1,4 +1,5 @@
 import express from "express";
+import cookieParser from "cookie-parser";
 import path from "path";
 
 import authRoutes from "./routes/auth.route.js";
@@ -18,7 +19,7 @@ connectDB();
 
 // middleware
 app.use(express.json());
-
+app.use(cookieParser());
 // routes
 app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
