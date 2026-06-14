@@ -1,50 +1,35 @@
 import express from "express";
 import cookieParser from "cookie-parser";
+import path from "path";
 import cors from "cors";
-import http from "http";
 
 import authRoutes from "./routes/auth.route.js";
-import messageRoutes from "./routes/message.routes.js";
+import messageRoutes from "./routes/message.route.js";
 import { connectDB } from "./lib/db.js";
 import { ENV } from "./lib/env.js";
-import { initSocket } from "./lib/socket.js";
+import { app, server } from "./lib/socket.js";
 
-const app = express();
-const server = http.createServer(app);
+const __dirname = path.resolve();
 
 const PORT = ENV.PORT || 3000;
 
-connectDB();
-
-// middleware
-app.use(express.json({ limit: "5mb" }));
-
-// ✅ FIXED CORS (SAFE FOR DEV + PROD)
-app.use(
-  cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:5174",
-      "https://chatify-frontend-hfwh.onrender.com",
-    ],
-    credentials: true,
-  })
-);
-
+app.use(express.json({ limit: "5mb" })); // req.body
+app.use(cors({ origin: ENV.CLIENT_URL, credentials: true }));
 app.use(cookieParser());
 
-// routes
 app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
 
-app.get("/", (req, res) => {
-  res.send("Backend is running 🚀");
-});
+// make ready for deployment
+if (ENV.NODE_ENV === "production") {
+  app.use(express.static(path.join(__dirname, "../frontend/dist")));
 
-// socket init
-initSocket(server);
+  app.get("*", (_, res) => {
+    res.sendFile(path.join(__dirname, "../frontend", "dist", "index.html"));
+  });
+}
 
-// server start
 server.listen(PORT, () => {
   console.log("Server running on port: " + PORT);
+  connectDB();
 });

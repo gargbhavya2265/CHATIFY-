@@ -1,6 +1,6 @@
 import cloudinary from "../lib/cloudinary.js";
-import { getReceiverSocketId, getIO } from "../lib/socket.js";
-import Message from "../models/message.js";
+import { getReceiverSocketId, io } from "../lib/socket.js";
+import Message from "../models/Message.js";
 import User from "../models/User.js";
 
 export const getAllContacts = async (req, res) => {
@@ -43,11 +43,9 @@ export const sendMessage = async (req, res) => {
     if (!text && !image) {
       return res.status(400).json({ message: "Text or image is required." });
     }
-
     if (senderId.equals(receiverId)) {
       return res.status(400).json({ message: "Cannot send messages to yourself." });
     }
-
     const receiverExists = await User.exists({ _id: receiverId });
     if (!receiverExists) {
       return res.status(404).json({ message: "Receiver not found." });
@@ -55,6 +53,7 @@ export const sendMessage = async (req, res) => {
 
     let imageUrl;
     if (image) {
+      // upload base64 image to cloudinary
       const uploadResponse = await cloudinary.uploader.upload(image);
       imageUrl = uploadResponse.secure_url;
     }
@@ -68,11 +67,8 @@ export const sendMessage = async (req, res) => {
 
     await newMessage.save();
 
-    // 🔥 REALTIME FIX
     const receiverSocketId = getReceiverSocketId(receiverId);
-    const io = getIO();
-
-    if (receiverSocketId && io) {
+    if (receiverSocketId) {
       io.to(receiverSocketId).emit("newMessage", newMessage);
     }
 

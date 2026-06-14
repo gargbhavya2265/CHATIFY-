@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router";
 import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/LoginPage";
 import SignUpPage from "./pages/SignUpPage";
@@ -6,8 +6,7 @@ import { useAuthStore } from "./store/useAuthStore";
 import { useEffect } from "react";
 import PageLoader from "./components/PageLoader";
 
-// ✅ ADD THIS
-import { socket } from "./lib/socket";
+import { Toaster } from "react-hot-toast";
 
 function App() {
   const { checkAuth, isCheckingAuth, authUser } = useAuthStore();
@@ -15,20 +14,6 @@ function App() {
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
-
-  // 🔥 SOCKET CONNECTION LOGIC (NEW ADDITION)
-  useEffect(() => {
-    if (authUser) {
-      socket.connect();
-      console.log("🔌 Socket connected");
-    } else {
-      socket.disconnect();
-    }
-
-    return () => {
-      socket.disconnect();
-    };
-  }, [authUser]);
 
   if (isCheckingAuth) return <PageLoader />;
 
@@ -40,21 +25,13 @@ function App() {
       <div className="absolute bottom-0 -right-4 size-96 bg-cyan-500 opacity-20 blur-[100px]" />
 
       <Routes>
-        <Route
-          path="/"
-          element={authUser ? <ChatPage /> : <Navigate to={"/login"} />}
-        />
-        <Route
-          path="/login"
-          element={!authUser ? <LoginPage /> : <Navigate to={"/"} />}
-        />
-        <Route
-          path="/signup"
-          element={!authUser ? <SignUpPage /> : <Navigate to={"/"} />}
-        />
+        <Route path="/" element={authUser ? <ChatPage /> : <Navigate to={"/login"} />} />
+        <Route path="/login" element={!authUser ? <LoginPage /> : <Navigate to={"/"} />} />
+        <Route path="/signup" element={!authUser ? <SignUpPage /> : <Navigate to={"/"} />} />
       </Routes>
+
+      <Toaster />
     </div>
   );
 }
-
 export default App;

@@ -3,8 +3,6 @@ import { axiosInstance } from "../lib/axios";
 import toast from "react-hot-toast";
 import { useAuthStore } from "./useAuthStore";
 
-
-let messageHandler = null;
 export const useChatStore = create((set, get) => ({
   allContacts: [],
   chats: [],
@@ -29,19 +27,18 @@ export const useChatStore = create((set, get) => ({
       const res = await axiosInstance.get("/messages/contacts");
       set({ allContacts: res.data });
     } catch (error) {
-      toast.error(error.response?.data?.message || "Error loading contacts");
+      toast.error(error.response.data.message);
     } finally {
       set({ isUsersLoading: false });
     }
   },
-
   getMyChatPartners: async () => {
     set({ isUsersLoading: true });
     try {
       const res = await axiosInstance.get("/messages/chats");
       set({ chats: res.data });
     } catch (error) {
-      toast.error(error.response?.data?.message || "Error loading chats");
+      toast.error(error.response.data.message);
     } finally {
       set({ isUsersLoading: false });
     }
@@ -72,71 +69,45 @@ export const useChatStore = create((set, get) => ({
       text: messageData.text,
       image: messageData.image,
       createdAt: new Date().toISOString(),
+      isOptimistic: true, // flag to identify optimistic messages (optional)
     };
-
-    // optimistic update
+    // immidetaly update the ui by adding the message
     set({ messages: [...messages, optimisticMessage] });
 
     try {
-      const res = await axiosInstance.post(
-        `/messages/send/${selectedUser._id}`,
-        messageData
-      );
-
-      // replace optimistic with real message
-      set((state) => ({
-        messages: state.messages
-          .filter((msg) => msg._id !== tempId)
-          .concat(res.data),
-      }));
+      const res = await axiosInstance.post(`/messages/send/${selectedUser._id}`, messageData);
+      set({ messages: messages.concat(res.data) });
     } catch (error) {
-      // rollback
+      // remove optimistic message on failure
       set({ messages: messages });
-      toast.error(error.response?.data?.message || "Failed to send message");
+      toast.error(error.response?.data?.message || "Something went wrong");
     }
   },
 
-  // 🔥 REALTIME FIXED VERSION
+  subscribeToMessages: () => {
+    const { selectedUser, isSoundEnabled } = get();
+    if (!selectedUser) return;
 
-subscribeToMessages: () => {
-  const socket = useAuthStore.getState().socket;
-  if (!socket) return;
+    const socket = useAuthStore.getState().socket;
 
-  const { isSoundEnabled } = get();
+    socket.on("newMessage", (newMessage) => {
+      const isMessageSentFromSelectedUser = newMessage.senderId === selectedUser._id;
+      if (!isMessageSentFromSelectedUser) return;
 
-  if (messageHandler) {
-    socket.off("newMessage", messageHandler);
-  }
+      const currentMessages = get().messages;
+      set({ messages: [...currentMessages, newMessage] });
 
-  messageHandler = (newMessage) => {
-    const currentChatUser = get().selectedUser;
-    if (!currentChatUser) return;
+      if (isSoundEnabled) {
+        const notificationSound = new Audio("/sounds/notification.mp3");
 
-    const isRelevant =
-      newMessage.senderId === currentChatUser._id ||
-      newMessage.receiverId === currentChatUser._id;
-
-    if (!isRelevant) return;
-
-    set((state) => {
-      const exists = state.messages.some(m => m._id === newMessage._id);
-      if (exists) return state;
-      return { messages: [...state.messages, newMessage] };
+        notificationSound.currentTime = 0; // reset to start
+        notificationSound.play().catch((e) => console.log("Audio play failed:", e));
+      }
     });
+  },
 
-    if (isSoundEnabled) {
-      const audio = new Audio("/sounds/notification.mp3");
-      audio.play().catch(() => {});
-    }
-  };
-
-  socket.on("newMessage", messageHandler);
-},
-
-unsubscribeFromMessages: () => {
-  const socket = useAuthStore.getState().socket;
-  if (socket && messageHandler) {
-    socket.off("newMessage", messageHandler);
-  }
-},
+  unsubscribeFromMessages: () => {
+    const socket = useAuthStore.getState().socket;
+    socket.off("newMessage");
+  },
 }));
