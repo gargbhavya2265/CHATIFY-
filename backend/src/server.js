@@ -28,6 +28,13 @@ app.use("/api/messages", messageRoutes);
 //     res.sendFile(path.join(__dirname, "../frontend", "dist", "index.html"));
 //   });
 // }
+// Health check route
+
+
+app.get("/", (req, res) => {
+  res.send("Backend is running 🚀");
+});
+
 
 server.listen(PORT, () => {
   console.log("Server running on port: " + PORT);
