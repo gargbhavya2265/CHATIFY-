@@ -3,16 +3,12 @@ import { socketAuthMiddleware } from "../middleware/socket.auth.middleware.js";
 import { ENV } from "./env.js";
 
 const userSocketMap = {};
-let io;
+let io = null;
 
 export function initSocket(server) {
   io = new Server(server, {
     cors: {
-      origin: [
-        "http://localhost:5173",
-        "http://localhost:5174",
-        ENV.CLIENT_URL,
-      ],
+      origin: [ENV.CLIENT_URL],
       credentials: true,
     },
   });
@@ -20,9 +16,9 @@ export function initSocket(server) {
   io.use(socketAuthMiddleware);
 
   io.on("connection", (socket) => {
-    console.log("A user connected");
+    console.log("User connected:", socket.id);
 
-    const userId = socket.user?.id || socket.userId;
+    const userId = socket.user?.id;
 
     if (!userId) {
       return socket.disconnect();
@@ -37,10 +33,13 @@ export function initSocket(server) {
       io.emit("getOnlineUsers", Object.keys(userSocketMap));
     });
   });
-
-  return io;
 }
 
+// ✅ IMPORTANT EXPORTS
 export function getReceiverSocketId(userId) {
   return userSocketMap[userId];
+}
+
+export function getIO() {
+  return io;
 }
