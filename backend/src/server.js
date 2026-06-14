@@ -16,20 +16,24 @@ const PORT = ENV.PORT || 3000;
 
 connectDB();
 
+// middleware
 app.use(express.json({ limit: "5mb" }));
 
+// ✅ FIXED CORS (SAFE FOR DEV + PROD)
 app.use(
   cors({
-    origin:
-      ENV.NODE_ENV === "development"
-        ? ["http://localhost:5173", "http://localhost:5174"]
-        : ENV.CLIENT_URL,
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "https://chatify-frontend-hfwh.onrender.com",
+    ],
     credentials: true,
   })
 );
 
 app.use(cookieParser());
 
+// routes
 app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
 
@@ -37,9 +41,10 @@ app.get("/", (req, res) => {
   res.send("Backend is running 🚀");
 });
 
-// 🔥 SOCKET INIT HERE (IMPORTANT)
+// socket init
 initSocket(server);
 
+// server start
 server.listen(PORT, () => {
   console.log("Server running on port: " + PORT);
 });
