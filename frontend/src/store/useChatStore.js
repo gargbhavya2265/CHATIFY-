@@ -33,7 +33,7 @@ export const useChatStore = create((set, get) => ({
       const res = await axiosInstance.get("/messages/contacts");
       set({ allContacts: res.data });
     } catch (error) {
-      toast.error(error.response.data.message);
+      toast.error(error.response?.data?.message || "Something went wrong");
     } finally {
       set({ isUsersLoading: false });
     }
@@ -45,7 +45,7 @@ export const useChatStore = create((set, get) => ({
       const res = await axiosInstance.get("/messages/chats");
       set({ chats: res.data });
     } catch (error) {
-      toast.error(error.response.data.message);
+      toast.error(error.response?.data?.message || "Something went wrong");
     } finally {
       set({ isUsersLoading: false });
     }
@@ -75,6 +75,7 @@ export const useChatStore = create((set, get) => ({
       receiverId: selectedUser._id,
       text: messageData.text,
       image: messageData.image,
+      status: "sent",
       createdAt: new Date().toISOString(),
       isOptimistic: true,
     };
@@ -112,7 +113,7 @@ export const useChatStore = create((set, get) => ({
 
     if (!socket) return;
 
-    const handleNewMessage = (newMessage) => {
+    const handleNewMessage = async (newMessage) => {
       const isMessageSentFromSelectedUser =
         newMessage.senderId === selectedUser._id;
 
@@ -130,6 +131,29 @@ export const useChatStore = create((set, get) => ({
           console.log("Audio play failed:", error)
         );
       }
+
+      try {
+        const res = await axiosInstance.patch(
+          `/messages/${newMessage._id}/read`
+        );
+
+        set((state) => ({
+          messages: state.messages.map((message) =>
+            message._id === newMessage._id
+              ? {
+                  ...message,
+                  status: res.data.updatedMessage.status,
+                  readAt: res.data.updatedMessage.readAt,
+                }
+              : message
+          ),
+        }));
+      } catch (error) {
+        console.log(
+          "Error marking message as read:",
+          error.response?.data?.message || error.message
+        );
+      }
     };
 
     const handleUserTyping = ({ senderId }) => {
@@ -144,15 +168,55 @@ export const useChatStore = create((set, get) => ({
       }
     };
 
+    const handleMessagesDelivered = ({ receiverId, messageIds } = {}) => {
+      if (receiverId !== selectedUser._id || !Array.isArray(messageIds)) return;
+
+      const deliveredMessageIds = new Set(messageIds);
+
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          deliveredMessageIds.has(message._id) &&
+          message.status !== "read"
+            ? {
+                ...message,
+                status: "delivered",
+              }
+            : message
+        ),
+      }));
+    };
+
+    const handleMessagesRead = ({ readerId, messageIds } = {}) => {
+      if (readerId !== selectedUser._id || !Array.isArray(messageIds)) return;
+
+      const readMessageIds = new Set(messageIds);
+
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          readMessageIds.has(message._id)
+            ? {
+                ...message,
+                status: "read",
+                readAt: new Date().toISOString(),
+              }
+            : message
+        ),
+      }));
+    };
+
     socket.on("newMessage", handleNewMessage);
     socket.on("userTyping", handleUserTyping);
     socket.on("userStoppedTyping", handleUserStoppedTyping);
+    socket.on("messagesDelivered", handleMessagesDelivered);
+    socket.on("messagesRead", handleMessagesRead);
 
     set({
       socketListeners: {
         handleNewMessage,
         handleUserTyping,
         handleUserStoppedTyping,
+        handleMessagesDelivered,
+        handleMessagesRead,
       },
     });
   },
@@ -165,6 +229,8 @@ export const useChatStore = create((set, get) => ({
       socket.off("newMessage", listeners.handleNewMessage);
       socket.off("userTyping", listeners.handleUserTyping);
       socket.off("userStoppedTyping", listeners.handleUserStoppedTyping);
+      socket.off("messagesDelivered", listeners.handleMessagesDelivered);
+      socket.off("messagesRead", listeners.handleMessagesRead);
     }
 
     set({
