@@ -3,7 +3,33 @@ import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
 import Message from "../models/message.js";
 import User from "../models/User.js";
+import Group from "../models/Group.js";
 import { sendPushNotification } from "../lib/pushService.js";
+
+const isGroupMember = async (groupId, userId) => {
+  return Group.exists({
+    _id: groupId,
+    "members.userId": userId,
+  });
+};
+
+const emitMessageUpdate = (message, eventName, update) => {
+  if (message.messageType === "group" && message.groupId) {
+    io.to(message.groupId.toString()).emit(eventName, update);
+    return;
+  }
+
+  const senderSocketId = getReceiverSocketId(message.senderId.toString());
+  const receiverSocketId = getReceiverSocketId(message.receiverId.toString());
+
+  if (senderSocketId) {
+    io.to(senderSocketId).emit(eventName, update);
+  }
+
+  if (receiverSocketId && receiverSocketId !== senderSocketId) {
+    io.to(receiverSocketId).emit(eventName, update);
+  }
+};
 
 export const getAllContacts = async (req, res) => {
   try {
@@ -25,7 +51,14 @@ export const getMessagesByUserId = async (req, res) => {
     const myId = req.user._id;
     const { id: userToChatId } = req.params;
 
+    if (!mongoose.Types.ObjectId.isValid(userToChatId)) {
+      return res.status(400).json({
+        message: "Invalid user ID.",
+      });
+    }
+
     const unreadMessages = await Message.find({
+      messageType: { $in: ["direct", null] },
       senderId: userToChatId,
       receiverId: myId,
       status: { $ne: "read" },
@@ -35,7 +68,10 @@ export const getMessagesByUserId = async (req, res) => {
 
     if (messageIds.length > 0) {
       await Message.updateMany(
-        { _id: { $in: messageIds } },
+        {
+          _id: { $in: messageIds },
+          receiverId: myId,
+        },
         {
           $set: {
             status: "read",
@@ -55,6 +91,7 @@ export const getMessagesByUserId = async (req, res) => {
     }
 
     const messages = await Message.find({
+      messageType: { $in: ["direct", null] },
       $or: [
         { senderId: myId, receiverId: userToChatId },
         { senderId: userToChatId, receiverId: myId },
@@ -68,6 +105,42 @@ export const getMessagesByUserId = async (req, res) => {
   }
 };
 
+export const getGroupMessages = async (req, res) => {
+  try {
+    const { id: groupId } = req.params;
+    const userId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(groupId)) {
+      return res.status(400).json({
+        message: "Invalid group ID.",
+      });
+    }
+
+    const isMember = await isGroupMember(groupId, userId);
+
+    if (!isMember) {
+      return res.status(403).json({
+        message: "You are not a member of this group.",
+      });
+    }
+
+    const messages = await Message.find({
+      messageType: "group",
+      groupId,
+    })
+      .populate("senderId", "fullName profilePic")
+      .populate("replyTo", "text image senderId")
+      .sort({ createdAt: 1 });
+
+    res.status(200).json(messages);
+  } catch (error) {
+    console.error("Error in getGroupMessages:", error.message);
+    res.status(500).json({
+      message: "Internal server error.",
+    });
+  }
+};
+
 export const markMessageAsRead = async (req, res) => {
   try {
     const { id: messageId } = req.params;
@@ -75,6 +148,7 @@ export const markMessageAsRead = async (req, res) => {
 
     const message = await Message.findOne({
       _id: messageId,
+      messageType: { $in: ["direct", null] },
       receiverId,
     });
 
@@ -120,9 +194,21 @@ export const sendMessage = async (req, res) => {
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
 
-    if (!text && !image) {
+    if ((!text || !text.trim()) && !image) {
       return res.status(400).json({
         message: "Text or image is required.",
+      });
+    }
+
+    if (typeof text === "string" && text.trim().length > 2000) {
+      return res.status(400).json({
+        message: "Message cannot exceed 2000 characters.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(receiverId)) {
+      return res.status(400).json({
+        message: "Invalid receiver ID.",
       });
     }
 
@@ -151,15 +237,10 @@ export const sendMessage = async (req, res) => {
 
       originalMessage = await Message.findOne({
         _id: replyTo,
+        messageType: { $in: ["direct", null] },
         $or: [
-          {
-            senderId,
-            receiverId,
-          },
-          {
-            senderId: receiverId,
-            receiverId: senderId,
-          },
+          { senderId, receiverId },
+          { senderId: receiverId, receiverId: senderId },
         ],
       });
 
@@ -178,9 +259,10 @@ export const sendMessage = async (req, res) => {
     }
 
     const newMessage = new Message({
+      messageType: "direct",
       senderId,
       receiverId,
-      text,
+      text: text?.trim(),
       image: imageUrl,
       replyTo: originalMessage?._id || null,
     });
@@ -217,6 +299,109 @@ export const sendMessage = async (req, res) => {
   }
 };
 
+export const sendGroupMessage = async (req, res) => {
+  try {
+    const { id: groupId } = req.params;
+    const { text, image, replyTo } = req.body;
+    const senderId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(groupId)) {
+      return res.status(400).json({
+        message: "Invalid group ID.",
+      });
+    }
+
+    if ((!text || !text.trim()) && !image) {
+      return res.status(400).json({
+        message: "Text or image is required.",
+      });
+    }
+
+    if (typeof text === "string" && text.trim().length > 2000) {
+      return res.status(400).json({
+        message: "Message cannot exceed 2000 characters.",
+      });
+    }
+
+    const group = await Group.findOne({
+      _id: groupId,
+      "members.userId": senderId,
+    });
+
+    if (!group) {
+      return res.status(403).json({
+        message: "You are not a member of this group.",
+      });
+    }
+
+    let originalMessage = null;
+
+    if (replyTo) {
+      if (!mongoose.Types.ObjectId.isValid(replyTo)) {
+        return res.status(400).json({
+          message: "Invalid reply message ID.",
+        });
+      }
+
+      originalMessage = await Message.findOne({
+        _id: replyTo,
+        messageType: "group",
+        groupId,
+      });
+
+      if (!originalMessage) {
+        return res.status(404).json({
+          message: "Original message not found in this group.",
+        });
+      }
+    }
+
+    let imageUrl;
+
+    if (image) {
+      const uploadResponse = await cloudinary.uploader.upload(image);
+      imageUrl = uploadResponse.secure_url;
+    }
+
+    const newMessage = new Message({
+      messageType: "group",
+      senderId,
+      groupId,
+      text: text?.trim(),
+      image: imageUrl,
+      replyTo: originalMessage?._id || null,
+      readBy: [
+        {
+          userId: senderId,
+          readAt: new Date(),
+        },
+      ],
+    });
+
+    await newMessage.save();
+
+    await newMessage.populate([
+      {
+        path: "senderId",
+        select: "fullName profilePic",
+      },
+      {
+        path: "replyTo",
+        select: "text image senderId",
+      },
+    ]);
+
+    io.to(groupId.toString()).emit("newGroupMessage", newMessage);
+
+    res.status(201).json(newMessage);
+  } catch (error) {
+    console.error("Error in sendGroupMessage:", error.message);
+    res.status(500).json({
+      message: "Internal server error.",
+    });
+  }
+};
+
 export const getChatPartners = async (req, res) => {
   try {
     const loggedInUserId = req.user._id;
@@ -224,6 +409,7 @@ export const getChatPartners = async (req, res) => {
     const conversations = await Message.aggregate([
       {
         $match: {
+          messageType: { $in: ["direct", null] },
           $or: [
             { senderId: loggedInUserId },
             { receiverId: loggedInUserId },
@@ -265,9 +451,9 @@ export const getChatPartners = async (req, res) => {
       },
     ]);
 
-    const partnerIds = conversations.map(
-      (conversation) => conversation._id
-    );
+    const partnerIds = conversations
+      .map((conversation) => conversation._id)
+      .filter(Boolean);
 
     const users = await User.find({
       _id: { $in: partnerIds },
@@ -279,7 +465,7 @@ export const getChatPartners = async (req, res) => {
 
     const chatPartners = conversations
       .map((conversation) => {
-        const user = userMap.get(conversation._id.toString());
+        const user = userMap.get(conversation._id?.toString());
 
         if (!user) return null;
 
@@ -325,13 +511,7 @@ export const toggleMessageReaction = async (req, res) => {
       });
     }
 
-    const message = await Message.findOne({
-      _id: messageId,
-      $or: [
-        { senderId: userId },
-        { receiverId: userId },
-      ],
-    });
+    const message = await Message.findById(messageId);
 
     if (!message) {
       return res.status(404).json({
@@ -339,7 +519,26 @@ export const toggleMessageReaction = async (req, res) => {
       });
     }
 
-    // Prevent users from reacting to their own messages.
+    if (message.messageType === "group") {
+      const member = await isGroupMember(message.groupId, userId);
+
+      if (!member) {
+        return res.status(403).json({
+          message: "You are not a member of this group.",
+        });
+      }
+    } else {
+      const isParticipant =
+        message.senderId.toString() === userId.toString() ||
+        message.receiverId?.toString() === userId.toString();
+
+      if (!isParticipant) {
+        return res.status(403).json({
+          message: "You cannot access this message.",
+        });
+      }
+    }
+
     if (message.senderId.toString() === userId.toString()) {
       return res.status(403).json({
         message: "You cannot react to your own message.",
@@ -371,16 +570,11 @@ export const toggleMessageReaction = async (req, res) => {
       message: message.toObject(),
     };
 
-    const senderSocketId = getReceiverSocketId(message.senderId.toString());
-    const receiverSocketId = getReceiverSocketId(message.receiverId.toString());
-
-    if (senderSocketId) {
-      io.to(senderSocketId).emit("messageReactionUpdated", reactionUpdate);
-    }
-
-    if (receiverSocketId && receiverSocketId !== senderSocketId) {
-      io.to(receiverSocketId).emit("messageReactionUpdated", reactionUpdate);
-    }
+    emitMessageUpdate(
+      message,
+      "messageReactionUpdated",
+      reactionUpdate
+    );
 
     res.status(200).json({
       message: "Reaction updated successfully.",
@@ -393,6 +587,7 @@ export const toggleMessageReaction = async (req, res) => {
     });
   }
 };
+
 export const editMessage = async (req, res) => {
   try {
     const { id: messageId } = req.params;
@@ -422,6 +617,16 @@ export const editMessage = async (req, res) => {
       });
     }
 
+    if (message.messageType === "group") {
+      const member = await isGroupMember(message.groupId, userId);
+
+      if (!member) {
+        return res.status(403).json({
+          message: "You are not a member of this group.",
+        });
+      }
+    }
+
     if (message.isDeleted) {
       return res.status(400).json({
         message: "Deleted messages cannot be edited.",
@@ -443,16 +648,7 @@ export const editMessage = async (req, res) => {
       message: message.toObject(),
     };
 
-    const senderSocketId = getReceiverSocketId(message.senderId.toString());
-    const receiverSocketId = getReceiverSocketId(message.receiverId.toString());
-
-    if (senderSocketId) {
-      io.to(senderSocketId).emit("messageUpdated", update);
-    }
-
-    if (receiverSocketId && receiverSocketId !== senderSocketId) {
-      io.to(receiverSocketId).emit("messageUpdated", update);
-    }
+    emitMessageUpdate(message, "messageUpdated", update);
 
     res.status(200).json({
       message: "Message edited successfully.",
@@ -482,6 +678,16 @@ export const deleteMessage = async (req, res) => {
       });
     }
 
+    if (message.messageType === "group") {
+      const member = await isGroupMember(message.groupId, userId);
+
+      if (!member) {
+        return res.status(403).json({
+          message: "You are not a member of this group.",
+        });
+      }
+    }
+
     if (message.isDeleted) {
       return res.status(400).json({
         message: "Message is already deleted.",
@@ -500,16 +706,7 @@ export const deleteMessage = async (req, res) => {
       message: message.toObject(),
     };
 
-    const senderSocketId = getReceiverSocketId(message.senderId.toString());
-    const receiverSocketId = getReceiverSocketId(message.receiverId.toString());
-
-    if (senderSocketId) {
-      io.to(senderSocketId).emit("messageDeleted", update);
-    }
-
-    if (receiverSocketId && receiverSocketId !== senderSocketId) {
-      io.to(receiverSocketId).emit("messageDeleted", update);
-    }
+    emitMessageUpdate(message, "messageDeleted", update);
 
     res.status(200).json({
       message: "Message deleted successfully.",

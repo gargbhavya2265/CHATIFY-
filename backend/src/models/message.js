@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const reactionSchema = new mongoose.Schema(
@@ -15,8 +16,29 @@ const reactionSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const readBySchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    readAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
 const messageSchema = new mongoose.Schema(
   {
+    messageType: {
+      type: String,
+      enum: ["direct", "group"],
+      default: "direct",
+      required: true,
+    },
     senderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -25,7 +47,16 @@ const messageSchema = new mongoose.Schema(
     receiverId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: function () {
+        return this.messageType === "direct";
+      },
+    },
+    groupId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Group",
+      required: function () {
+        return this.messageType === "group";
+      },
     },
     text: {
       type: String,
@@ -65,6 +96,10 @@ const messageSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    readBy: {
+      type: [readBySchema],
+      default: [],
+    },
     reactions: {
       type: [reactionSchema],
       default: [],
@@ -72,6 +107,9 @@ const messageSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+messageSchema.index({ groupId: 1, createdAt: -1 });
+messageSchema.index({ senderId: 1, receiverId: 1, createdAt: -1 });
 
 const Message = mongoose.model("Message", messageSchema);
 

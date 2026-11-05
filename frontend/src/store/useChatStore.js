@@ -1,4 +1,3 @@
-
 import { create } from "zustand";
 import { axiosInstance } from "../lib/axios";
 import toast from "react-hot-toast";
@@ -8,13 +7,17 @@ export const useChatStore = create((set, get) => ({
   allContacts: [],
   chats: [],
   messages: [],
+  groups: [],
   activeTab: "chats",
   selectedUser: null,
+  selectedGroup: null,
   isUsersLoading: false,
   isMessagesLoading: false,
+  isGroupsLoading: false,
   isTyping: false,
   replyingTo: null,
   socketListeners: null,
+  groupSocketListeners: null,
   isSoundEnabled: JSON.parse(localStorage.getItem("isSoundEnabled")) === true,
 
   toggleSound: () => {
@@ -24,12 +27,29 @@ export const useChatStore = create((set, get) => ({
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
-  setSelectedUser: (selectedUser) =>
+  setSelectedUser: (selectedUser) => {
+    get().unsubscribeFromGroupMessages();
+
     set({
       selectedUser,
+      selectedGroup: null,
       isTyping: false,
       replyingTo: null,
-    }),
+      messages: [],
+    });
+  },
+
+  setSelectedGroup: (selectedGroup) => {
+    get().unsubscribeFromMessages();
+
+    set({
+      selectedGroup,
+      selectedUser: null,
+      isTyping: false,
+      replyingTo: null,
+      messages: [],
+    });
+  },
 
   setReplyingTo: (message) => set({ replyingTo: message }),
 
@@ -59,6 +79,33 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
+  getMyGroups: async () => {
+    set({ isGroupsLoading: true });
+
+    try {
+      const res = await axiosInstance.get("/groups");
+      const responseData = res.data;
+
+      const groupsList = Array.isArray(responseData)
+        ? responseData
+        : Array.isArray(responseData.groups)
+          ? responseData.groups
+          : Array.isArray(responseData.data)
+            ? responseData.data
+            : [];
+
+      set({ groups: groupsList });
+    } catch (error) {
+      console.error("Error fetching groups:", error);
+
+      toast.error(
+        error.response?.data?.message || "Unable to fetch groups"
+      );
+    } finally {
+      set({ isGroupsLoading: false });
+    }
+  },
+
   getMessagesByUserId: async (userId) => {
     set({ isMessagesLoading: true });
 
@@ -73,6 +120,34 @@ export const useChatStore = create((set, get) => ({
       await get().getMyChatPartners();
     } catch (error) {
       toast.error(error.response?.data?.message || "Something went wrong");
+    } finally {
+      set({ isMessagesLoading: false });
+    }
+  },
+
+  getGroupMessages: async (groupId) => {
+    if (!groupId) return;
+
+    set({
+      isMessagesLoading: true,
+      messages: [],
+      replyingTo: null,
+    });
+
+    try {
+      const res = await axiosInstance.get(`/messages/groups/${groupId}`);
+
+      const messages = Array.isArray(res.data)
+        ? res.data
+        : res.data.messages || [];
+
+      set({ messages });
+    } catch (error) {
+      console.error("Error fetching group messages:", error);
+
+      toast.error(
+        error.response?.data?.message || "Unable to fetch group messages"
+      );
     } finally {
       set({ isMessagesLoading: false });
     }
@@ -135,6 +210,67 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
+  sendGroupMessage: async (messageData) => {
+    const { selectedGroup, messages, replyingTo } = get();
+    const { authUser } = useAuthStore.getState();
+
+    if (!selectedGroup || !authUser) return;
+
+    const groupId = selectedGroup._id;
+    const replyToId = replyingTo?._id || null;
+
+    const payload = {
+      ...messageData,
+      ...(replyToId && { replyTo: replyToId }),
+    };
+
+    const tempId = `temp-${Date.now()}`;
+
+    const optimisticMessage = {
+      _id: tempId,
+      messageType: "group",
+      groupId,
+      senderId: authUser,
+      text: messageData.text,
+      image: messageData.image,
+      replyTo: replyingTo,
+      readBy: [{ userId: authUser._id, readAt: new Date() }],
+      createdAt: new Date().toISOString(),
+      isOptimistic: true,
+    };
+
+    set({ messages: [...messages, optimisticMessage] });
+
+    try {
+      const res = await axiosInstance.post(
+        `/messages/groups/${groupId}`,
+        payload
+      );
+
+      const savedMessage = res.data.message || res.data;
+
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          message._id === tempId ? savedMessage : message
+        ),
+        replyingTo:
+          state.replyingTo?._id === replyToId
+            ? null
+            : state.replyingTo,
+      }));
+    } catch (error) {
+      set((state) => ({
+        messages: state.messages.filter(
+          (message) => message._id !== tempId
+        ),
+      }));
+
+      toast.error(
+        error.response?.data?.message || "Unable to send group message"
+      );
+    }
+  },
+
   toggleReaction: async (messageId, emoji) => {
     try {
       const res = await axiosInstance.patch(
@@ -172,7 +308,10 @@ export const useChatStore = create((set, get) => ({
       }));
 
       toast.success("Message edited");
-      await get().getMyChatPartners();
+
+      if (get().selectedUser) {
+        await get().getMyChatPartners();
+      }
     } catch (error) {
       toast.error(
         error.response?.data?.message || "Unable to edit message"
@@ -193,7 +332,10 @@ export const useChatStore = create((set, get) => ({
       }));
 
       toast.success("Message deleted");
-      await get().getMyChatPartners();
+
+      if (get().selectedUser) {
+        await get().getMyChatPartners();
+      }
     } catch (error) {
       toast.error(
         error.response?.data?.message || "Unable to delete message"
@@ -225,7 +367,6 @@ export const useChatStore = create((set, get) => ({
 
       if (isSoundEnabled) {
         const notificationSound = new Audio("/sounds/notification.mp3");
-
         notificationSound.currentTime = 0;
 
         notificationSound.play().catch((error) =>
@@ -287,10 +428,7 @@ export const useChatStore = create((set, get) => ({
         messages: state.messages.map((message) =>
           deliveredMessageIds.has(message._id.toString()) &&
           message.status !== "read"
-            ? {
-                ...message,
-                status: "delivered",
-              }
+            ? { ...message, status: "delivered" }
             : message
         ),
       }));
@@ -390,12 +528,10 @@ export const useChatStore = create((set, get) => ({
       socket.off("userStoppedTyping", listeners.handleUserStoppedTyping);
       socket.off("messagesDelivered", listeners.handleMessagesDelivered);
       socket.off("messagesRead", listeners.handleMessagesRead);
-
       socket.off(
         "messageReactionUpdated",
         listeners.handleMessageReactionUpdated
       );
-
       socket.off("messageUpdated", listeners.handleMessageUpdated);
       socket.off("messageDeleted", listeners.handleMessageDeleted);
     }
@@ -406,4 +542,108 @@ export const useChatStore = create((set, get) => ({
       replyingTo: null,
     });
   },
+
+  
+  subscribeToGroupMessages: () => {
+    const { selectedGroup, isSoundEnabled } = get();
+
+    if (!selectedGroup) return;
+
+    const socket = useAuthStore.getState().socket;
+
+    if (!socket) return;
+
+    // Prevent duplicate listeners
+    get().unsubscribeFromGroupMessages();
+
+    const groupId = selectedGroup._id.toString();
+
+    const handleNewGroupMessage = (newMessage) => {
+      const messageGroupId = (
+        newMessage.groupId?._id || newMessage.groupId
+      )?.toString();
+
+      if (messageGroupId !== groupId) return;
+
+      const { authUser } = useAuthStore.getState();
+
+      const senderId = (
+        newMessage.senderId?._id || newMessage.senderId
+      )?.toString();
+
+      if (senderId === authUser?._id?.toString()) return;
+
+      set((state) => {
+        const alreadyExists = state.messages.some(
+          (message) => message._id === newMessage._id
+        );
+
+        if (alreadyExists) return state;
+
+        return {
+          messages: [...state.messages, newMessage],
+        };
+      });
+
+      if (isSoundEnabled) {
+        const notificationSound = new Audio("/sounds/notification.mp3");
+        notificationSound.currentTime = 0;
+
+        notificationSound.play().catch((error) =>
+          console.log("Audio play failed:", error)
+        );
+      }
+    };
+
+    const updateGroupMessage = ({ message: updatedMessage } = {}) => {
+      if (!updatedMessage?._id) return;
+
+      if (updatedMessage.groupId?.toString() !== groupId &&
+          updatedMessage.groupId?._id?.toString() !== groupId) {
+        return;
+      }
+
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          message._id === updatedMessage._id
+            ? updatedMessage
+            : message
+        ),
+      }));
+    };
+
+    socket.on("newGroupMessage", handleNewGroupMessage);
+
+    // These event names match the backend
+    socket.on("messageUpdated", updateGroupMessage);
+    socket.on("messageDeleted", updateGroupMessage);
+    socket.on("messageReactionUpdated", updateGroupMessage);
+
+    set({
+      groupSocketListeners: {
+        handleNewGroupMessage,
+        updateGroupMessage,
+      },
+    });
+  },
+
+  unsubscribeFromGroupMessages: () => {
+    const socket = useAuthStore.getState().socket;
+    const listeners = get().groupSocketListeners;
+
+    if (socket && listeners) {
+      socket.off("newGroupMessage", listeners.handleNewGroupMessage);
+      socket.off("messageUpdated", listeners.updateGroupMessage);
+      socket.off("messageDeleted", listeners.updateGroupMessage);
+      socket.off(
+        "messageReactionUpdated",
+        listeners.updateGroupMessage
+      );
+    }
+
+    set({
+      groupSocketListeners: null,
+    });
+  },
+
 }));

@@ -5,6 +5,7 @@ import { ENV } from "./env.js";
 import { socketAuthMiddleware } from "../middleware/socket.auth.middleware.js";
 import Message from "../models/message.js";
 import User from "../models/User.js";
+import Group from "../models/Group.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -29,6 +30,23 @@ io.on("connection", async (socket) => {
 
   const userId = socket.userId;
   userSocketMap[userId] = socket.id;
+
+  // Join all groups where the user is a member
+  try {
+    const userGroups = await Group.find({
+      "members.userId": userId,
+    }).select("_id");
+
+    for (const group of userGroups) {
+      socket.join(group._id.toString());
+    }
+
+    console.log(
+      `${socket.user.fullName} joined ${userGroups.length} group rooms`
+    );
+  } catch (error) {
+    console.error("Error joining group rooms:", error);
+  }
 
   // Broadcast online users
   io.emit("getOnlineUsers", Object.keys(userSocketMap));

@@ -3,6 +3,7 @@ import cookieParser from "cookie-parser";
 // import path from "path";
 import cors from "cors";
 import pushRoutes from "./routes/push.route.js";
+import groupRoutes from "./routes/group.route.js";
 
 import authRoutes from "./routes/auth.route.js";
 import messageRoutes from "./routes/message.route.js";
@@ -20,7 +21,7 @@ app.use(cookieParser());
 app.use("/api/push", pushRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
-
+app.use("/api/groups", groupRoutes);
 // // make ready for deployment
 // if (ENV.NODE_ENV === "production") {
 //   app.use(express.static(path.join(__dirname, "../frontend/dist")));
