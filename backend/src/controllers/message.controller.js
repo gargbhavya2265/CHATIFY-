@@ -215,3 +215,79 @@ export const getChatPartners = async (req, res) => {
     });
   }
 };
+
+export const toggleMessageReaction = async (req, res) => {
+  try {
+    const { id: messageId } = req.params;
+    const { emoji } = req.body;
+    const userId = req.user._id;
+
+    const allowedEmojis = ["❤️", "😂", "👍", "😮", "😢", "🔥"];
+
+    if (!allowedEmojis.includes(emoji)) {
+      return res.status(400).json({
+        message: "Invalid reaction emoji.",
+      });
+    }
+
+    const message = await Message.findOne({
+      _id: messageId,
+      $or: [
+        { senderId: userId },
+        { receiverId: userId },
+      ],
+    });
+
+    if (!message) {
+      return res.status(404).json({
+        message: "Message not found.",
+      });
+    }
+
+    const existingReaction = message.reactions.find(
+      (reaction) => reaction.userId.toString() === userId.toString()
+    );
+
+    if (existingReaction) {
+      if (existingReaction.emoji === emoji) {
+        message.reactions = message.reactions.filter(
+          (reaction) => reaction.userId.toString() !== userId.toString()
+        );
+      } else {
+        existingReaction.emoji = emoji;
+      }
+    } else {
+      message.reactions.push({
+        userId,
+        emoji,
+      });
+    }
+
+    await message.save();
+
+    const reactionUpdate = {
+      message: message.toObject(),
+    };
+
+    const senderSocketId = getReceiverSocketId(message.senderId.toString());
+    const receiverSocketId = getReceiverSocketId(message.receiverId.toString());
+
+    if (senderSocketId) {
+      io.to(senderSocketId).emit("messageReactionUpdated", reactionUpdate);
+    }
+
+    if (receiverSocketId && receiverSocketId !== senderSocketId) {
+      io.to(receiverSocketId).emit("messageReactionUpdated", reactionUpdate);
+    }
+
+    res.status(200).json({
+      message: "Reaction updated successfully.",
+      updatedMessage: message,
+    });
+  } catch (error) {
+    console.log("Error in toggleMessageReaction:", error.message);
+    res.status(500).json({
+      error: "Internal server error",
+    });
+  }
+};

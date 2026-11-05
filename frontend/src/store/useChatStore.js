@@ -1,3 +1,4 @@
+
 import { create } from "zustand";
 import { axiosInstance } from "../lib/axios";
 import toast from "react-hot-toast";
@@ -104,6 +105,27 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
+  toggleReaction: async (messageId, emoji) => {
+    try {
+      const res = await axiosInstance.patch(
+        `/messages/${messageId}/reaction`,
+        { emoji }
+      );
+
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          message._id === messageId
+            ? res.data.updatedMessage
+            : message
+        ),
+      }));
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message || "Unable to update reaction"
+      );
+    }
+  },
+
   subscribeToMessages: () => {
     const { selectedUser, isSoundEnabled } = get();
 
@@ -204,11 +226,24 @@ export const useChatStore = create((set, get) => ({
       }));
     };
 
+    const handleMessageReactionUpdated = ({ message: updatedMessage } = {}) => {
+      if (!updatedMessage?._id) return;
+
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          message._id === updatedMessage._id
+            ? updatedMessage
+            : message
+        ),
+      }));
+    };
+
     socket.on("newMessage", handleNewMessage);
     socket.on("userTyping", handleUserTyping);
     socket.on("userStoppedTyping", handleUserStoppedTyping);
     socket.on("messagesDelivered", handleMessagesDelivered);
     socket.on("messagesRead", handleMessagesRead);
+    socket.on("messageReactionUpdated", handleMessageReactionUpdated);
 
     set({
       socketListeners: {
@@ -217,6 +252,7 @@ export const useChatStore = create((set, get) => ({
         handleUserStoppedTyping,
         handleMessagesDelivered,
         handleMessagesRead,
+        handleMessageReactionUpdated,
       },
     });
   },
@@ -231,6 +267,10 @@ export const useChatStore = create((set, get) => ({
       socket.off("userStoppedTyping", listeners.handleUserStoppedTyping);
       socket.off("messagesDelivered", listeners.handleMessagesDelivered);
       socket.off("messagesRead", listeners.handleMessagesRead);
+      socket.off(
+        "messageReactionUpdated",
+        listeners.handleMessageReactionUpdated
+      );
     }
 
     set({
