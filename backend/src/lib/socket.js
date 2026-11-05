@@ -1,3 +1,4 @@
+
 import { Server } from "socket.io";
 import http from "http";
 import express from "express";
@@ -14,16 +15,16 @@ const io = new Server(server, {
   },
 });
 
-// apply authentication middleware to all socket connections
+// Apply authentication middleware to all socket connections
 io.use(socketAuthMiddleware);
 
-// we will use this function to check if the user is online or not
+// Get the socket ID of an online user
 export function getReceiverSocketId(userId) {
   return userSocketMap[userId];
 }
 
-// this is for storig online users
-const userSocketMap = {}; // {userId:socketId}
+// Store online users
+const userSocketMap = {}; // { userId: socketId }
 
 io.on("connection", (socket) => {
   console.log("A user connected", socket.user.fullName);
@@ -31,13 +32,40 @@ io.on("connection", (socket) => {
   const userId = socket.userId;
   userSocketMap[userId] = socket.id;
 
-  // io.emit() is used to send events to all connected clients
+  // Broadcast online users
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
-  // with socket.on we listen for events from clients
+  // Handle typing events
+  socket.on("typing", ({ receiverId } = {}) => {
+    if (typeof receiverId !== "string" || receiverId === userId) return;
+
+    const receiverSocketId = getReceiverSocketId(receiverId);
+
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("userTyping", {
+        senderId: userId,
+      });
+    }
+  });
+
+  // Handle stopped typing events
+  socket.on("stopTyping", ({ receiverId } = {}) => {
+    if (typeof receiverId !== "string" || receiverId === userId) return;
+
+    const receiverSocketId = getReceiverSocketId(receiverId);
+
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("userStoppedTyping", {
+        senderId: userId,
+      });
+    }
+  });
+
   socket.on("disconnect", () => {
     console.log("A user disconnected", socket.user.fullName);
+
     delete userSocketMap[userId];
+
     io.emit("getOnlineUsers", Object.keys(userSocketMap));
   });
 });

@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useKeyboardSound from "../hooks/useKeyboardSound";
 import { useChatStore } from "../store/useChatStore";
+import { useAuthStore } from "../store/useAuthStore";
 import toast from "react-hot-toast";
 import { ImageIcon, SendIcon, XIcon } from "lucide-react";
 
@@ -10,25 +11,100 @@ function MessageInput() {
   const [imagePreview, setImagePreview] = useState(null);
 
   const fileInputRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const activeReceiverIdRef = useRef(null);
 
-  const { sendMessage, isSoundEnabled } = useChatStore();
+  const { sendMessage, isSoundEnabled, selectedUser } = useChatStore();
+  const socket = useAuthStore((state) => state.socket);
+
+  const stopTyping = (receiverId = activeReceiverIdRef.current) => {
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
+    if (receiverId && socket?.connected) {
+      socket.emit("stopTyping", { receiverId });
+    }
+
+    activeReceiverIdRef.current = null;
+  };
+
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
+      const receiverId = activeReceiverIdRef.current;
+
+      if (receiverId && socket?.connected) {
+        socket.emit("stopTyping", { receiverId });
+      }
+
+      activeReceiverIdRef.current = null;
+    };
+  }, [selectedUser?._id, socket]);
 
   const handleSendMessage = (e) => {
     e.preventDefault();
+
     if (!text.trim() && !imagePreview) return;
+
+    stopTyping();
+
     if (isSoundEnabled) playRandomKeyStrokeSound();
 
     sendMessage({
       text: text.trim(),
       image: imagePreview,
     });
+
     setText("");
     setImagePreview(null);
+
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleTextChange = (e) => {
+    const value = e.target.value;
+    setText(value);
+
+    if (isSoundEnabled) playRandomKeyStrokeSound();
+
+    if (!selectedUser || !socket?.connected) return;
+
+    const receiverId = selectedUser._id;
+
+    if (!value.trim()) {
+      stopTyping(receiverId);
+      return;
+    }
+
+    if (activeReceiverIdRef.current !== receiverId) {
+      if (activeReceiverIdRef.current) {
+        stopTyping();
+      }
+
+      activeReceiverIdRef.current = receiverId;
+
+      socket.emit("typing", { receiverId });
+    }
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      stopTyping(receiverId);
+    }, 1000);
   };
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
+
+    if (!file) return;
+
     if (!file.type.startsWith("image/")) {
       toast.error("Please select an image file");
       return;
@@ -41,7 +117,10 @@ function MessageInput() {
 
   const removeImage = () => {
     setImagePreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   return (
@@ -69,10 +148,7 @@ function MessageInput() {
         <input
           type="text"
           value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            isSoundEnabled && playRandomKeyStrokeSound();
-          }}
+          onChange={handleTextChange}
           className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-lg py-2 px-4 text-white placeholder:text-slate-400"
         />
 
@@ -93,6 +169,7 @@ function MessageInput() {
         >
           <ImageIcon className="w-5 h-5" />
         </button>
+
         <button
           type="submit"
           disabled={!text.trim() && !imagePreview}
@@ -104,4 +181,5 @@ function MessageInput() {
     </div>
   );
 }
+
 export default MessageInput;
