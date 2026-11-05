@@ -4,6 +4,7 @@ import express from "express";
 import { ENV } from "./env.js";
 import { socketAuthMiddleware } from "../middleware/socket.auth.middleware.js";
 import Message from "../models/message.js";
+import User from "../models/User.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -29,6 +30,7 @@ io.on("connection", async (socket) => {
   const userId = socket.userId;
   userSocketMap[userId] = socket.id;
 
+  // Broadcast online users
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
   // Mark pending messages as delivered when receiver comes online
@@ -106,14 +108,30 @@ io.on("connection", async (socket) => {
     }
   });
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
     console.log("A user disconnected", socket.user.fullName);
 
+    // Update lastSeen only when this is the user's active socket
     if (userSocketMap[userId] === socket.id) {
       delete userSocketMap[userId];
-    }
 
-    io.emit("getOnlineUsers", Object.keys(userSocketMap));
+      try {
+        const lastSeen = new Date();
+
+        await User.findByIdAndUpdate(userId, {
+          $set: { lastSeen },
+        });
+
+        io.emit("userLastSeen", {
+          userId,
+          lastSeen,
+        });
+      } catch (error) {
+        console.error("Error updating last seen:", error);
+      }
+
+      io.emit("getOnlineUsers", Object.keys(userSocketMap));
+    }
   });
 });
 

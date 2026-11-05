@@ -5,9 +5,27 @@ import { useAuthStore } from "../store/useAuthStore";
 
 function ChatHeader() {
   const { selectedUser, setSelectedUser, isTyping } = useChatStore();
-  const { onlineUsers } = useAuthStore();
+  const { onlineUsers, lastSeenUpdates } = useAuthStore();
 
   const isOnline = onlineUsers.includes(selectedUser._id);
+
+  const lastSeen =
+    lastSeenUpdates[selectedUser._id] || selectedUser.lastSeen;
+
+  const getLastSeenText = () => {
+    if (!lastSeen) return "Offline";
+
+    const date = new Date(lastSeen);
+
+    if (Number.isNaN(date.getTime())) return "Offline";
+
+    return `Last seen ${date.toLocaleString("en-IN", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`;
+  };
 
   useEffect(() => {
     const handleEscKey = (event) => {
@@ -43,8 +61,8 @@ function ChatHeader() {
             {isTyping ? (
               <span className="text-cyan-400">Typing...</span>
             ) : (
-              <span className="text-slate-400">
-                {isOnline ? "Online" : "Offline"}
+              <span className={isOnline ? "text-green-400" : "text-slate-400"}>
+                {isOnline ? "Online" : getLastSeenText()}
               </span>
             )}
           </p>
