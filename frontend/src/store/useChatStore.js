@@ -13,6 +13,7 @@ export const useChatStore = create((set, get) => ({
   isUsersLoading: false,
   isMessagesLoading: false,
   isTyping: false,
+  replyingTo: null,
   socketListeners: null,
   isSoundEnabled: JSON.parse(localStorage.getItem("isSoundEnabled")) === true,
 
@@ -23,13 +24,18 @@ export const useChatStore = create((set, get) => ({
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
-  setSelectedUser: (selectedUser) => set({
-    selectedUser,
-    isTyping: false,
-  }),
+  setSelectedUser: (selectedUser) =>
+    set({
+      selectedUser,
+      isTyping: false,
+      replyingTo: null,
+    }),
+
+  setReplyingTo: (message) => set({ replyingTo: message }),
 
   getAllContacts: async () => {
     set({ isUsersLoading: true });
+
     try {
       const res = await axiosInstance.get("/messages/contacts");
       set({ allContacts: res.data });
@@ -42,6 +48,7 @@ export const useChatStore = create((set, get) => ({
 
   getMyChatPartners: async () => {
     set({ isUsersLoading: true });
+
     try {
       const res = await axiosInstance.get("/messages/chats");
       set({ chats: res.data });
@@ -54,9 +61,16 @@ export const useChatStore = create((set, get) => ({
 
   getMessagesByUserId: async (userId) => {
     set({ isMessagesLoading: true });
+
     try {
       const res = await axiosInstance.get(`/messages/${userId}`);
-      set({ messages: res.data });
+
+      set({
+        messages: res.data,
+        replyingTo: null,
+      });
+
+      await get().getMyChatPartners();
     } catch (error) {
       toast.error(error.response?.data?.message || "Something went wrong");
     } finally {
@@ -65,8 +79,17 @@ export const useChatStore = create((set, get) => ({
   },
 
   sendMessage: async (messageData) => {
-    const { selectedUser, messages } = get();
+    const { selectedUser, messages, replyingTo } = get();
     const { authUser } = useAuthStore.getState();
+
+    if (!selectedUser || !authUser) return;
+
+    const replyToId = replyingTo?._id || null;
+
+    const payload = {
+      ...messageData,
+      ...(replyToId && { replyTo: replyToId }),
+    };
 
     const tempId = `temp-${Date.now()}`;
 
@@ -76,6 +99,7 @@ export const useChatStore = create((set, get) => ({
       receiverId: selectedUser._id,
       text: messageData.text,
       image: messageData.image,
+      replyTo: replyingTo,
       status: "sent",
       createdAt: new Date().toISOString(),
       isOptimistic: true,
@@ -86,14 +110,20 @@ export const useChatStore = create((set, get) => ({
     try {
       const res = await axiosInstance.post(
         `/messages/send/${selectedUser._id}`,
-        messageData
+        payload
       );
 
       set((state) => ({
         messages: state.messages.map((message) =>
           message._id === tempId ? res.data : message
         ),
+        replyingTo:
+          state.replyingTo?._id === replyToId
+            ? null
+            : state.replyingTo,
       }));
+
+      await get().getMyChatPartners();
     } catch (error) {
       set((state) => ({
         messages: state.messages.filter(
@@ -126,6 +156,51 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
+  editMessage: async (messageId, text) => {
+    try {
+      const res = await axiosInstance.patch(
+        `/messages/${messageId}`,
+        { text }
+      );
+
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          message._id === messageId
+            ? res.data.updatedMessage
+            : message
+        ),
+      }));
+
+      toast.success("Message edited");
+      await get().getMyChatPartners();
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message || "Unable to edit message"
+      );
+    }
+  },
+
+  deleteMessage: async (messageId) => {
+    try {
+      const res = await axiosInstance.delete(`/messages/${messageId}`);
+
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          message._id === messageId
+            ? res.data.updatedMessage
+            : message
+        ),
+      }));
+
+      toast.success("Message deleted");
+      await get().getMyChatPartners();
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message || "Unable to delete message"
+      );
+    }
+  },
+
   subscribeToMessages: () => {
     const { selectedUser, isSoundEnabled } = get();
 
@@ -135,11 +210,14 @@ export const useChatStore = create((set, get) => ({
 
     if (!socket) return;
 
-    const handleNewMessage = async (newMessage) => {
-      const isMessageSentFromSelectedUser =
-        newMessage.senderId === selectedUser._id;
+    const selectedUserId = selectedUser._id.toString();
 
-      if (!isMessageSentFromSelectedUser) return;
+    const handleNewMessage = async (newMessage) => {
+      const senderId = (
+        newMessage.senderId?._id || newMessage.senderId
+      )?.toString();
+
+      if (senderId !== selectedUserId) return;
 
       set((state) => ({
         messages: [...state.messages, newMessage],
@@ -149,6 +227,7 @@ export const useChatStore = create((set, get) => ({
         const notificationSound = new Audio("/sounds/notification.mp3");
 
         notificationSound.currentTime = 0;
+
         notificationSound.play().catch((error) =>
           console.log("Audio play failed:", error)
         );
@@ -170,6 +249,8 @@ export const useChatStore = create((set, get) => ({
               : message
           ),
         }));
+
+        await get().getMyChatPartners();
       } catch (error) {
         console.log(
           "Error marking message as read:",
@@ -179,25 +260,32 @@ export const useChatStore = create((set, get) => ({
     };
 
     const handleUserTyping = ({ senderId }) => {
-      if (senderId === selectedUser._id) {
+      if (senderId?.toString() === selectedUserId) {
         set({ isTyping: true });
       }
     };
 
     const handleUserStoppedTyping = ({ senderId }) => {
-      if (senderId === selectedUser._id) {
+      if (senderId?.toString() === selectedUserId) {
         set({ isTyping: false });
       }
     };
 
     const handleMessagesDelivered = ({ receiverId, messageIds } = {}) => {
-      if (receiverId !== selectedUser._id || !Array.isArray(messageIds)) return;
+      if (
+        receiverId?.toString() !== selectedUserId ||
+        !Array.isArray(messageIds)
+      ) {
+        return;
+      }
 
-      const deliveredMessageIds = new Set(messageIds);
+      const deliveredMessageIds = new Set(
+        messageIds.map((id) => id.toString())
+      );
 
       set((state) => ({
         messages: state.messages.map((message) =>
-          deliveredMessageIds.has(message._id) &&
+          deliveredMessageIds.has(message._id.toString()) &&
           message.status !== "read"
             ? {
                 ...message,
@@ -209,13 +297,20 @@ export const useChatStore = create((set, get) => ({
     };
 
     const handleMessagesRead = ({ readerId, messageIds } = {}) => {
-      if (readerId !== selectedUser._id || !Array.isArray(messageIds)) return;
+      if (
+        readerId?.toString() !== selectedUserId ||
+        !Array.isArray(messageIds)
+      ) {
+        return;
+      }
 
-      const readMessageIds = new Set(messageIds);
+      const readMessageIds = new Set(
+        messageIds.map((id) => id.toString())
+      );
 
       set((state) => ({
         messages: state.messages.map((message) =>
-          readMessageIds.has(message._id)
+          readMessageIds.has(message._id.toString())
             ? {
                 ...message,
                 status: "read",
@@ -238,12 +333,38 @@ export const useChatStore = create((set, get) => ({
       }));
     };
 
+    const handleMessageUpdated = ({ message: updatedMessage } = {}) => {
+      if (!updatedMessage?._id) return;
+
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          message._id === updatedMessage._id
+            ? updatedMessage
+            : message
+        ),
+      }));
+    };
+
+    const handleMessageDeleted = ({ message: updatedMessage } = {}) => {
+      if (!updatedMessage?._id) return;
+
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          message._id === updatedMessage._id
+            ? updatedMessage
+            : message
+        ),
+      }));
+    };
+
     socket.on("newMessage", handleNewMessage);
     socket.on("userTyping", handleUserTyping);
     socket.on("userStoppedTyping", handleUserStoppedTyping);
     socket.on("messagesDelivered", handleMessagesDelivered);
     socket.on("messagesRead", handleMessagesRead);
     socket.on("messageReactionUpdated", handleMessageReactionUpdated);
+    socket.on("messageUpdated", handleMessageUpdated);
+    socket.on("messageDeleted", handleMessageDeleted);
 
     set({
       socketListeners: {
@@ -253,6 +374,8 @@ export const useChatStore = create((set, get) => ({
         handleMessagesDelivered,
         handleMessagesRead,
         handleMessageReactionUpdated,
+        handleMessageUpdated,
+        handleMessageDeleted,
       },
     });
   },
@@ -267,15 +390,20 @@ export const useChatStore = create((set, get) => ({
       socket.off("userStoppedTyping", listeners.handleUserStoppedTyping);
       socket.off("messagesDelivered", listeners.handleMessagesDelivered);
       socket.off("messagesRead", listeners.handleMessagesRead);
+
       socket.off(
         "messageReactionUpdated",
         listeners.handleMessageReactionUpdated
       );
+
+      socket.off("messageUpdated", listeners.handleMessageUpdated);
+      socket.off("messageDeleted", listeners.handleMessageDeleted);
     }
 
     set({
       socketListeners: null,
       isTyping: false,
+      replyingTo: null,
     });
   },
 }));

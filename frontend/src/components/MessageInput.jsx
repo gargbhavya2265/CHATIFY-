@@ -1,20 +1,40 @@
+
 import { useEffect, useRef, useState } from "react";
 import useKeyboardSound from "../hooks/useKeyboardSound";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import toast from "react-hot-toast";
-import { ImageIcon, SendIcon, XIcon } from "lucide-react";
+import EmojiPicker from "emoji-picker-react";
+import {
+  ImageIcon,
+  SendIcon,
+  XIcon,
+  CornerUpLeftIcon,
+  SmileIcon,
+} from "lucide-react";
 
 function MessageInput() {
   const { playRandomKeyStrokeSound } = useKeyboardSound();
   const [text, setText] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   const fileInputRef = useRef(null);
+  const textInputRef = useRef(null);
+  const emojiPickerRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const activeReceiverIdRef = useRef(null);
+  const cursorPositionRef = useRef(0);
 
-  const { sendMessage, isSoundEnabled, selectedUser } = useChatStore();
+  const {
+    sendMessage,
+    isSoundEnabled,
+    selectedUser,
+    replyingTo,
+    setReplyingTo,
+  } = useChatStore();
+
+  const authUser = useAuthStore((state) => state.authUser);
   const socket = useAuthStore((state) => state.socket);
 
   const stopTyping = (receiverId = activeReceiverIdRef.current) => {
@@ -46,6 +66,23 @@ function MessageInput() {
     };
   }, [selectedUser?._id, socket]);
 
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(event.target)
+      ) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
   const handleSendMessage = (e) => {
     e.preventDefault();
 
@@ -62,6 +99,8 @@ function MessageInput() {
 
     setText("");
     setImagePreview(null);
+    setShowEmojiPicker(false);
+    cursorPositionRef.current = 0;
 
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -69,6 +108,8 @@ function MessageInput() {
   const handleTextChange = (e) => {
     const value = e.target.value;
     setText(value);
+
+    cursorPositionRef.current = e.target.selectionStart;
 
     if (isSoundEnabled) playRandomKeyStrokeSound();
 
@@ -100,6 +141,48 @@ function MessageInput() {
     }, 1000);
   };
 
+  const handleEmojiClick = (emojiData) => {
+    const input = textInputRef.current;
+
+    if (!input) return;
+
+    const start = input.selectionStart ?? cursorPositionRef.current;
+    const end = input.selectionEnd ?? start;
+
+    const newText =
+      text.substring(0, start) +
+      emojiData.emoji +
+      text.substring(end);
+
+    setText(newText);
+    setShowEmojiPicker(false);
+
+    const newCursorPosition = start + emojiData.emoji.length;
+    cursorPositionRef.current = newCursorPosition;
+
+    requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(newCursorPosition, newCursorPosition);
+    });
+
+    if (selectedUser && socket?.connected) {
+      const receiverId = selectedUser._id;
+
+      if (activeReceiverIdRef.current !== receiverId) {
+        activeReceiverIdRef.current = receiverId;
+        socket.emit("typing", { receiverId });
+      }
+
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
+      typingTimeoutRef.current = setTimeout(() => {
+        stopTyping(receiverId);
+      }, 1000);
+    }
+  };
+
   const handleImageChange = (e) => {
     const file = e.target.files[0];
 
@@ -123,8 +206,58 @@ function MessageInput() {
     }
   };
 
+  const cancelReply = () => {
+    setReplyingTo(null);
+  };
+
+  const isReplyFromMe =
+    replyingTo?.senderId?.toString() === authUser?._id?.toString();
+
+  const replySenderName = isReplyFromMe
+    ? "You"
+    : selectedUser?.fullName || selectedUser?.username || "Contact";
+
+  const replyText = replyingTo?.text || (
+    replyingTo?.image ? "Photo" : "Message"
+  );
+
   return (
     <div className="p-4 border-t border-slate-700/50">
+      {replyingTo && (
+        <div className="max-w-3xl mx-auto mb-3">
+          <div className="flex items-center gap-3 bg-slate-800/70 border-l-4 border-cyan-500 rounded-lg p-3">
+            <CornerUpLeftIcon className="w-5 h-5 text-cyan-400 shrink-0" />
+
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-cyan-400">
+                Replying to {replySenderName}
+              </p>
+
+              <p className="text-sm text-slate-300 truncate">
+                {replyText}
+              </p>
+
+              {replyingTo.image && (
+                <img
+                  src={replyingTo.image}
+                  alt="Original message"
+                  className="w-10 h-10 object-cover rounded mt-1"
+                />
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={cancelReply}
+              className="text-slate-400 hover:text-white p-1"
+              aria-label="Cancel reply"
+            >
+              <XIcon className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {imagePreview && (
         <div className="max-w-3xl mx-auto mb-3 flex items-center">
           <div className="relative">
@@ -144,13 +277,44 @@ function MessageInput() {
         </div>
       )}
 
-      <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto flex space-x-4">
-        <input
-          type="text"
-          value={text}
-          onChange={handleTextChange}
-          className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-lg py-2 px-4 text-white placeholder:text-slate-400"
-        />
+      <form
+        onSubmit={handleSendMessage}
+        className="max-w-3xl mx-auto flex gap-2 sm:gap-4"
+      >
+        <div className="relative flex-1 min-w-0">
+          {showEmojiPicker && (
+            <div
+              ref={emojiPickerRef}
+              className="absolute bottom-full left-0 mb-3 z-50 shadow-2xl"
+            >
+              <EmojiPicker
+                onEmojiClick={handleEmojiClick}
+                theme="dark"
+                width={300}
+                height={350}
+                previewConfig={{ showPreview: false }}
+              />
+            </div>
+          )}
+
+          <input
+            ref={textInputRef}
+            type="text"
+            value={text}
+            onChange={handleTextChange}
+            onClick={(e) => {
+              cursorPositionRef.current = e.target.selectionStart;
+            }}
+            onKeyUp={(e) => {
+              cursorPositionRef.current = e.target.selectionStart;
+            }}
+            onSelect={(e) => {
+              cursorPositionRef.current = e.target.selectionStart;
+            }}
+            placeholder="Type a message..."
+            className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg py-2 px-4 text-white placeholder:text-slate-400"
+          />
+        </div>
 
         <input
           type="file"
@@ -162,10 +326,24 @@ function MessageInput() {
 
         <button
           type="button"
+          onClick={() => setShowEmojiPicker((prev) => !prev)}
+          className={`bg-slate-800/50 rounded-lg px-3 transition-colors ${
+            showEmojiPicker
+              ? "text-cyan-400"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+          aria-label="Open emoji picker"
+        >
+          <SmileIcon className="w-5 h-5" />
+        </button>
+
+        <button
+          type="button"
           onClick={() => fileInputRef.current?.click()}
-          className={`bg-slate-800/50 text-slate-400 hover:text-slate-200 rounded-lg px-4 transition-colors ${
+          className={`bg-slate-800/50 text-slate-400 hover:text-slate-200 rounded-lg px-3 transition-colors ${
             imagePreview ? "text-cyan-500" : ""
           }`}
+          aria-label="Attach image"
         >
           <ImageIcon className="w-5 h-5" />
         </button>

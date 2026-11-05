@@ -6,6 +6,8 @@ import {
   sendMessage,
   markMessageAsRead,
   toggleMessageReaction,
+  editMessage,
+  deleteMessage,
 } from "../controllers/message.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 import { arcjetProtection } from "../middleware/arcjet.middleware.js";
@@ -21,5 +23,7 @@ router.get("/:id", getMessagesByUserId);
 router.post("/send/:id", sendMessage);
 router.patch("/:id/read", markMessageAsRead);
 router.patch("/:id/reaction", toggleMessageReaction);
+router.patch("/:id", editMessage);
+router.delete("/:id", deleteMessage);
 
 export default router;

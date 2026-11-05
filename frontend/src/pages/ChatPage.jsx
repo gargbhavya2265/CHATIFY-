@@ -1,4 +1,7 @@
+
+import { useEffect } from "react";
 import { useChatStore } from "../store/useChatStore";
+import { useAuthStore } from "../store/useAuthStore";
 
 import BorderAnimatedContainer from "../components/BorderAnimatedContainer";
 import ProfileHeader from "../components/ProfileHeader";
@@ -9,7 +12,26 @@ import ChatContainer from "../components/ChatContainer";
 import NoConversationPlaceholder from "../components/NoConversationPlaceholder";
 
 function ChatPage() {
-  const { activeTab, selectedUser } = useChatStore();
+  const { activeTab, selectedUser, getMyChatPartners } = useChatStore();
+  const { socket } = useAuthStore();
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const refreshChats = () => {
+      getMyChatPartners();
+    };
+
+    socket.on("newMessage", refreshChats);
+    socket.on("connect", refreshChats);
+
+    refreshChats();
+
+    return () => {
+      socket.off("newMessage", refreshChats);
+      socket.off("connect", refreshChats);
+    };
+  }, [socket, getMyChatPartners]);
 
   return (
     <div className="relative w-full max-w-6xl h-[800px]">
@@ -32,4 +54,5 @@ function ChatPage() {
     </div>
   );
 }
+
 export default ChatPage;

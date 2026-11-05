@@ -10,7 +10,6 @@ const reactionSchema = new mongoose.Schema(
     emoji: {
       type: String,
       required: true,
-      enum: ["❤️", "😂", "👍", "😮", "😢", "🔥"],
     },
   },
   { _id: false }
@@ -35,6 +34,23 @@ const messageSchema = new mongoose.Schema(
     },
     image: {
       type: String,
+    },
+    isEdited: {
+      type: Boolean,
+      default: false,
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
+    replyTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Message",
+      default: null,
     },
     status: {
       type: String,

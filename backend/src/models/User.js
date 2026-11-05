@@ -1,5 +1,29 @@
 import mongoose from "mongoose";
 
+const pushSubscriptionSchema = new mongoose.Schema(
+  {
+    endpoint: {
+      type: String,
+      required: true,
+    },
+    expirationTime: {
+      type: Number,
+      default: null,
+    },
+    keys: {
+      p256dh: {
+        type: String,
+        required: true,
+      },
+      auth: {
+        type: String,
+        required: true,
+      },
+    },
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     email: {
@@ -23,6 +47,10 @@ const userSchema = new mongoose.Schema(
     lastSeen: {
       type: Date,
       default: null,
+    },
+    pushSubscriptions: {
+      type: [pushSubscriptionSchema],
+      default: [],
     },
   },
   { timestamps: true }
