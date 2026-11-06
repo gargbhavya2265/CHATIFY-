@@ -44,6 +44,7 @@ function ChatsList() {
     chats,
     isUsersLoading,
     setSelectedUser,
+    openUserProfile,
   } = useChatStore();
 
   const { onlineUsers } = useAuthStore();
@@ -51,6 +52,11 @@ function ChatsList() {
   useEffect(() => {
     getMyChatPartners();
   }, [getMyChatPartners]);
+
+  const handleProfileClick = (event, userId) => {
+    event.stopPropagation();
+    openUserProfile(userId);
+  };
 
   if (isUsersLoading) return <UsersLoadingSkeleton />;
 
@@ -70,19 +76,33 @@ function ChatsList() {
                 onlineUsers.includes(chat._id) ? "online" : "offline"
               }`}
             >
-              <div className="size-12 rounded-full">
+              <button
+                type="button"
+                className="size-12 rounded-full overflow-hidden cursor-pointer"
+                onClick={(event) =>
+                  handleProfileClick(event, chat._id)
+                }
+                aria-label={`View ${chat.fullName}'s profile`}
+              >
                 <img
                   src={chat.profilePic || "/avatar.png"}
                   alt={chat.fullName}
+                  className="size-full object-cover"
                 />
-              </div>
+              </button>
             </div>
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
-                <h4 className="text-slate-200 font-medium truncate">
+                <button
+                  type="button"
+                  className="text-slate-200 font-medium truncate text-left hover:text-cyan-400 transition-colors"
+                  onClick={(event) =>
+                    handleProfileClick(event, chat._id)
+                  }
+                >
                   {chat.fullName}
-                </h4>
+                </button>
 
                 <span className="text-xs text-slate-400 shrink-0">
                   {formatMessageTime(chat.lastMessageAt)}

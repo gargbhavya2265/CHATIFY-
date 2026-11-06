@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 
 const reactionSchema = new mongoose.Schema(
@@ -39,6 +38,20 @@ const messageSchema = new mongoose.Schema(
       default: "direct",
       required: true,
     },
+    isSystemMessage: {
+      type: Boolean,
+      default: false,
+    },
+    systemEvent: {
+      type: String,
+      enum: [
+        "members_added",
+        "member_removed",
+        "member_left",
+        "role_updated",
+      ],
+      default: null,
+    },
     senderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -76,6 +89,11 @@ const messageSchema = new mongoose.Schema(
     },
     deletedAt: {
       type: Date,
+      default: null,
+    },
+    deletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
       default: null,
     },
     replyTo: {

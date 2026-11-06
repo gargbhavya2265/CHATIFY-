@@ -9,6 +9,7 @@ function ContactList() {
     getAllContacts,
     allContacts,
     setSelectedUser,
+    openUserProfile,
     isUsersLoading,
   } = useChatStore();
 
@@ -30,6 +31,11 @@ function ContactList() {
         .some((value) => value.toLowerCase().includes(query))
     );
   }, [allContacts, search]);
+
+  const handleProfileClick = (event, userId) => {
+    event.stopPropagation();
+    openUserProfile(userId);
+  };
 
   if (isUsersLoading) return <UsersLoadingSkeleton />;
 
@@ -60,18 +66,33 @@ function ContactList() {
                   onlineUsers.includes(contact._id) ? "online" : "offline"
                 }`}
               >
-                <div className="size-12 rounded-full">
+                <button
+                  type="button"
+                  className="size-12 rounded-full overflow-hidden cursor-pointer"
+                  onClick={(event) =>
+                    handleProfileClick(event, contact._id)
+                  }
+                  aria-label={`View ${contact.fullName}'s profile`}
+                >
                   <img
                     src={contact.profilePic || "/avatar.png"}
                     alt={contact.fullName}
+                    className="size-full object-cover"
                   />
-                </div>
+                </button>
               </div>
 
               <div className="min-w-0">
-                <h4 className="text-slate-200 font-medium truncate">
+                <button
+                  type="button"
+                  className="text-slate-200 font-medium truncate text-left hover:text-cyan-400 transition-colors"
+                  onClick={(event) =>
+                    handleProfileClick(event, contact._id)
+                  }
+                >
                   {contact.fullName}
-                </h4>
+                </button>
+
                 <p className="text-xs text-slate-400">
                   {onlineUsers.includes(contact._id) ? "Online" : "Offline"}
                 </p>

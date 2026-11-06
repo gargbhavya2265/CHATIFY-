@@ -1,10 +1,18 @@
+
 import { XIcon } from "lucide-react";
 import { useChatStore } from "../store/useChatStore";
 import { useEffect } from "react";
 import { useAuthStore } from "../store/useAuthStore";
 
 function ChatHeader() {
-  const { selectedUser, setSelectedUser, isTyping } = useChatStore();
+  const {
+    selectedUser,
+    setSelectedUser,
+    isTyping,
+    openUserProfile,
+    viewingProfile,
+  } = useChatStore();
+
   const { onlineUsers, lastSeenUpdates } = useAuthStore();
 
   const isOnline = onlineUsers.includes(selectedUser._id);
@@ -29,13 +37,19 @@ function ChatHeader() {
 
   useEffect(() => {
     const handleEscKey = (event) => {
-      if (event.key === "Escape") setSelectedUser(null);
+      if (event.key === "Escape" && !viewingProfile) {
+        setSelectedUser(null);
+      }
     };
 
     window.addEventListener("keydown", handleEscKey);
 
     return () => window.removeEventListener("keydown", handleEscKey);
-  }, [setSelectedUser]);
+  }, [setSelectedUser, viewingProfile]);
+
+  const handleProfileClick = () => {
+    openUserProfile(selectedUser._id);
+  };
 
   return (
     <div
@@ -44,18 +58,28 @@ function ChatHeader() {
     >
       <div className="flex items-center space-x-3">
         <div className={`avatar ${isOnline ? "online" : "offline"}`}>
-          <div className="w-12 rounded-full">
+          <button
+            type="button"
+            className="w-12 rounded-full overflow-hidden cursor-pointer"
+            onClick={handleProfileClick}
+            aria-label={`View ${selectedUser.fullName}'s profile`}
+          >
             <img
               src={selectedUser.profilePic || "/avatar.png"}
               alt={selectedUser.fullName}
+              className="size-full object-cover"
             />
-          </div>
+          </button>
         </div>
 
         <div>
-          <h3 className="text-slate-200 font-medium">
+          <button
+            type="button"
+            onClick={handleProfileClick}
+            className="text-slate-200 font-medium hover:text-cyan-400 transition-colors"
+          >
             {selectedUser.fullName}
-          </h3>
+          </button>
 
           <p className="text-sm">
             {isTyping ? (

@@ -31,6 +31,8 @@ io.on("connection", async (socket) => {
   const userId = socket.userId;
   userSocketMap[userId] = socket.id;
 
+  socket.join(userId.toString());
+
   // Join all groups where the user is a member
   try {
     const userGroups = await Group.find({

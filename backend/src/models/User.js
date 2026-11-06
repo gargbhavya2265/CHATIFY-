@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const pushSubscriptionSchema = new mongoose.Schema(
@@ -43,6 +44,12 @@ const userSchema = new mongoose.Schema(
     profilePic: {
       type: String,
       default: "",
+    },
+    about: {
+      type: String,
+      default: "",
+      maxlength: 150,
+      trim: true,
     },
     lastSeen: {
       type: Date,
