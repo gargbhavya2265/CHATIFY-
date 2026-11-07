@@ -1,4 +1,5 @@
 
+import cloudinary from "../lib/cloudinary.js";
 import { io } from "../lib/socket.js";
 import mongoose from "mongoose";
 import Group from "../models/Group.js";
@@ -200,6 +201,148 @@ export const getGroupDetails = async (req, res) => {
 
         return res.status(500).json({
             message: "Internal server error.",
+        });
+    }
+};
+
+// UPDATE GROUP DETAILS
+export const updateGroupDetails = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const { name, description, groupPic } = req.body;
+        const userId = req.user._id;
+
+        if (!mongoose.Types.ObjectId.isValid(groupId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid group ID.",
+            });
+        }
+
+        if (
+            name === undefined &&
+            description === undefined &&
+            groupPic === undefined
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "At least one group detail is required.",
+            });
+        }
+
+        const group = await Group.findById(groupId);
+
+        if (!group) {
+            return res.status(404).json({
+                success: false,
+                message: "Group not found.",
+            });
+        }
+
+        const requester = group.members.find(
+            (member) =>
+                member.userId.toString() === userId.toString()
+        );
+
+        if (!requester || requester.role !== "admin") {
+            return res.status(403).json({
+                success: false,
+                message: "Only group admins can update group details.",
+            });
+        }
+
+        if (name !== undefined) {
+            if (
+                typeof name !== "string" ||
+                name.trim().length < 3 ||
+                name.trim().length > 50
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Group name must be between 3 and 50 characters.",
+                });
+            }
+
+            group.name = name.trim();
+        }
+
+        if (description !== undefined) {
+            if (
+                typeof description !== "string" ||
+                description.length > 500
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Description cannot exceed 500 characters.",
+                });
+            }
+
+            group.description = description.trim();
+        }
+
+        if (groupPic !== undefined) {
+            if (typeof groupPic !== "string") {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid group picture.",
+                });
+            }
+
+            if (groupPic.trim()) {
+                const uploadResponse = await cloudinary.uploader.upload(
+                    groupPic,
+                    {
+                        folder: "chatify/group_pictures",
+                    }
+                );
+
+                group.groupPic = uploadResponse.secure_url;
+            } else {
+                group.groupPic = "";
+            }
+        }
+
+        await group.save();
+
+        await group.populate(
+            "members.userId",
+            "fullName profilePic email"
+        );
+
+        await group.populate(
+            "createdBy",
+            "fullName profilePic"
+        );
+
+        // TEMPORARY DIAGNOSTIC LOGGING
+        const groupRoom = io.sockets.adapter.rooms.get(
+            groupId.toString()
+        );
+
+        console.log("GROUP UPDATE DEBUG:", {
+            groupId: groupId.toString(),
+            socketsInGroupRoom: groupRoom
+                ? [...groupRoom]
+                : [],
+            socketCount: groupRoom?.size || 0,
+            connectedSocketCount: io.sockets.sockets.size,
+        });
+
+        io.to(groupId.toString()).emit("groupUpdated", {
+            group,
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: "Group details updated successfully.",
+            group,
+        });
+    } catch (error) {
+        console.error("Error in updateGroupDetails:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to update group details.",
         });
     }
 };

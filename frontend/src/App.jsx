@@ -1,4 +1,3 @@
-
 import { Navigate, Route, Routes } from "react-router";
 import { useEffect } from "react";
 import { Toaster, toast } from "react-hot-toast";
@@ -43,6 +42,61 @@ function App() {
         unsubscribeFromGroupCreated,
     ]);
 
+    // Global group details update listener.
+    useEffect(() => {
+        if (!authUser || !socket) return;
+
+        const handleGroupUpdated = ({ group: updatedGroup } = {}) => {
+            console.log("GROUP UPDATED EVENT RECEIVED:", {
+                currentUser: authUser.fullName,
+                socketId: socket.id,
+                socketConnected: socket.connected,
+                groupId: updatedGroup?._id,
+                groupName: updatedGroup?.name,
+                groupDescription: updatedGroup?.description,
+            });
+
+            if (!updatedGroup?._id) {
+                console.warn("GROUP UPDATED EVENT: Invalid group payload");
+                return;
+            }
+
+            useChatStore.setState((state) => {
+                const groupExists = state.groups.some(
+                    (group) =>
+                        group._id?.toString() === updatedGroup._id.toString()
+                );
+
+                const selectedGroupMatches =
+                    state.selectedGroup?._id?.toString() ===
+                    updatedGroup._id.toString();
+
+                console.log("GROUP UPDATED STATE CHECK:", {
+                    currentUser: authUser.fullName,
+                    groupExists,
+                    selectedGroupMatches,
+                });
+
+                return {
+                    groups: state.groups.map((group) =>
+                        group._id?.toString() === updatedGroup._id.toString()
+                            ? updatedGroup
+                            : group
+                    ),
+                    selectedGroup: selectedGroupMatches
+                        ? updatedGroup
+                        : state.selectedGroup,
+                };
+            });
+        };
+
+        socket.on("groupUpdated", handleGroupUpdated);
+
+        return () => {
+            socket.off("groupUpdated", handleGroupUpdated);
+        };
+    }, [authUser, socket]);
+
     // Global group member added notification listener.
     useEffect(() => {
         if (!authUser || !socket) return;
@@ -63,7 +117,7 @@ function App() {
             // Show notification to the newly added user.
             toast.success(
                 message ||
-                `${addedBy?.fullName || "Someone"} added you to ${group.name}.`,
+                    `${addedBy?.fullName || "Someone"} added you to ${group.name}.`,
                 {
                     duration: 5000,
                 }

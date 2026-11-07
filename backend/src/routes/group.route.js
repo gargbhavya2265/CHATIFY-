@@ -4,6 +4,7 @@ import {
     getMyGroups,
     getMyFormerGroups,
     getGroupDetails,
+    updateGroupDetails,
     addMembers,
     removeMember,
     leaveGroup,
@@ -30,5 +31,6 @@ router.delete("/:groupId/members/:memberId", removeMember);
 router.post("/:groupId/leave", leaveGroup);
 router.patch("/:groupId/members/:memberId/role", updateMemberRole);
 router.delete("/:groupId", deleteGroup);
+router.patch("/:groupId", updateGroupDetails);
 
 export default router;

@@ -302,6 +302,42 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
+    updateGroupDetails: async (groupId, updates) => {
+        try {
+            const res = await axiosInstance.patch(
+                `/groups/${groupId}`,
+                updates
+            );
+
+            const updatedGroup = res.data.group;
+
+            set((state) => ({
+                groups: state.groups.map((group) =>
+                    group._id?.toString() === groupId.toString()
+                        ? updatedGroup
+                        : group
+                ),
+                selectedGroup:
+                    state.selectedGroup?._id?.toString() === groupId.toString()
+                        ? updatedGroup
+                        : state.selectedGroup,
+            }));
+
+            toast.success(
+                res.data.message || "Group details updated successfully."
+            );
+
+            return true;
+        } catch (error) {
+            toast.error(
+                error.response?.data?.message ||
+                "Unable to update group details."
+            );
+
+            return false;
+        }
+    },
+
     addGroupMembers: async (groupId, memberIds) => {
         try {
             const res = await axiosInstance.post(
@@ -362,6 +398,54 @@ export const useChatStore = create((set, get) => ({
         } catch (error) {
             toast.error(
                 error.response?.data?.message || "Unable to remove members."
+            );
+
+            return false;
+        }
+    },
+
+    leaveGroup: async (groupId) => {
+        try {
+            const res = await axiosInstance.post(
+                `/groups/${groupId}/leave`
+            );
+
+            const formerGroup = {
+                ...res.data.group,
+                isFormerMember: true,
+            };
+
+            const storageKey = getSelectedGroupStorageKey();
+
+            if (storageKey) {
+                localStorage.removeItem(storageKey);
+            }
+
+            set((state) => ({
+                groups: state.groups.filter(
+                    (group) => group._id?.toString() !== groupId.toString()
+                ),
+                formerGroups: [
+                    formerGroup,
+                    ...state.formerGroups.filter(
+                        (group) => group._id?.toString() !== groupId.toString()
+                    ),
+                ],
+                selectedGroup:
+                    state.selectedGroup?._id?.toString() === groupId.toString()
+                        ? formerGroup
+                        : state.selectedGroup,
+                replyingTo: null,
+            }));
+
+            toast.success(
+                res.data.message || "You left the group successfully."
+            );
+
+            return true;
+        } catch (error) {
+            toast.error(
+                error.response?.data?.message || "Unable to leave group."
             );
 
             return false;

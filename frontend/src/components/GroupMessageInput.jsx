@@ -1,4 +1,3 @@
-
 import { useRef, useState } from "react";
 import { Image, Send, X, Smile, Reply } from "lucide-react";
 import EmojiPicker from "emoji-picker-react";
@@ -114,16 +113,16 @@ function GroupMessageInput() {
   return (
     <div className="relative shrink-0 w-full border-t border-slate-700/50 bg-slate-800/50 p-4">
       {replyingTo && (
-        <div className="flex items-center justify-between bg-slate-700/50 rounded-lg p-3 mb-3 min-w-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <Reply className="w-4 h-4 text-cyan-400 shrink-0" />
+        <div className="flex items-start justify-between bg-slate-700/50 rounded-lg p-3 mb-3 min-w-0 gap-2">
+          <div className="flex items-start gap-2 min-w-0 flex-1">
+            <Reply className="w-4 h-4 text-cyan-400 shrink-0 mt-1" />
 
-            <div className="min-w-0">
+            <div className="flex-1 min-w-0">
               <p className="text-xs text-cyan-400">
                 Replying to
               </p>
 
-              <p className="text-sm text-slate-300 truncate">
+              <p className="text-sm text-slate-300 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                 {replyingTo.senderId?.fullName || "Group member"}:{" "}
                 {replyingTo.image
                   ? replyingTo.text || "Image"
@@ -143,7 +142,8 @@ function GroupMessageInput() {
           <button
             type="button"
             onClick={() => setReplyingTo(null)}
-            className="text-slate-400 hover:text-white ml-2 shrink-0"
+            className="text-slate-400 hover:text-white shrink-0"
+            title="Cancel reply"
           >
             <X className="w-4 h-4" />
           </button>
