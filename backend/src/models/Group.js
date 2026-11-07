@@ -64,6 +64,11 @@ const groupSchema = new mongoose.Schema(
             ref: "User",
             required: true,
         },
+        ownerId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
+        },
         members: {
             type: [groupMemberSchema],
             required: true,

@@ -76,6 +76,7 @@ export const createGroup = async (req, res) => {
             name: name.trim(),
             description: description?.trim() || "",
             createdBy: req.user._id,
+            ownerId: req.user._id,
             members: uniqueMemberIds.map((userId) => ({
                 userId,
                 role:
@@ -125,6 +126,7 @@ export const getMyGroups = async (req, res) => {
         })
             .populate("members.userId", "fullName profilePic email")
             .populate("createdBy", "fullName profilePic")
+            .populate("ownerId", "fullName profilePic")
             .sort({ updatedAt: -1 });
 
         return res.status(200).json({
@@ -151,6 +153,7 @@ export const getMyFormerGroups = async (req, res) => {
         })
             .populate("members.userId", "fullName profilePic email")
             .populate("createdBy", "fullName profilePic")
+            .populate("ownerId", "fullName profilePic")
             .populate("formerMembers.userId", "fullName profilePic")
             .sort({ updatedAt: -1 });
 
@@ -184,7 +187,8 @@ export const getGroupDetails = async (req, res) => {
             "members.userId": userId,
         })
             .populate("members.userId", "fullName profilePic email")
-            .populate("createdBy", "fullName profilePic");
+            .populate("createdBy", "fullName profilePic")
+            .populate("ownerId", "fullName profilePic");
 
         if (!group) {
             return res.status(404).json({
@@ -311,6 +315,11 @@ export const updateGroupDetails = async (req, res) => {
 
         await group.populate(
             "createdBy",
+            "fullName profilePic"
+        );
+
+        await group.populate(
+            "ownerId",
             "fullName profilePic"
         );
 
@@ -871,6 +880,159 @@ export const updateMemberRole = async (req, res) => {
         return res.status(500).json({
             message: "Internal server error.",
         });
+    }
+};
+
+// TRANSFER GROUP OWNERSHIP
+export const transferGroupOwnership = async (req, res) => {
+    const session = await mongoose.startSession();
+
+    try {
+        const { groupId } = req.params;
+        const { newOwnerId } = req.body;
+        const userId = req.user._id;
+
+        if (
+            !mongoose.Types.ObjectId.isValid(groupId) ||
+            !mongoose.Types.ObjectId.isValid(newOwnerId)
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid group or user ID.",
+            });
+        }
+
+        if (userId.toString() === newOwnerId) {
+            return res.status(400).json({
+                success: false,
+                message: "You are already the group owner.",
+            });
+        }
+
+        let errorResponse = null;
+        let group = null;
+        let previousOwnerName = req.user.fullName;
+        let newOwnerName = "";
+
+        await session.withTransaction(async () => {
+            errorResponse = null;
+
+            group = await Group.findById(groupId).session(session);
+
+            if (!group) {
+                errorResponse = {
+                    status: 404,
+                    message: "Group not found.",
+                };
+                return;
+            }
+
+            const currentOwnerId = group.ownerId || group.createdBy;
+
+            const currentOwner = group.members.find(
+                (member) =>
+                    member.userId.toString() === currentOwnerId.toString()
+            );
+
+            if (!currentOwner) {
+                errorResponse = {
+                    status: 409,
+                    message: "The current owner is not an active group member.",
+                };
+                return;
+            }
+
+            if (currentOwnerId.toString() !== userId.toString()) {
+                errorResponse = {
+                    status: 403,
+                    message: "Only the group owner can transfer ownership.",
+                };
+                return;
+            }
+
+            const newOwner = group.members.find(
+                (member) =>
+                    member.userId.toString() === newOwnerId
+            );
+
+            if (!newOwner) {
+                errorResponse = {
+                    status: 404,
+                    message: "New owner must be an active group member.",
+                };
+                return;
+            }
+
+            const users = await User.find({
+                _id: { $in: [userId, newOwnerId] },
+            })
+                .select("fullName")
+                .session(session);
+
+            if (users.length !== 2) {
+                errorResponse = {
+                    status: 404,
+                    message: "One or more users were not found.",
+                };
+                return;
+            }
+
+            previousOwnerName =
+                users.find(
+                    (user) => user._id.toString() === userId.toString()
+                )?.fullName || req.user.fullName;
+
+            newOwnerName =
+                users.find(
+                    (user) => user._id.toString() === newOwnerId
+                )?.fullName || "";
+
+            currentOwner.role = "admin";
+            newOwner.role = "admin";
+            group.ownerId = newOwner.userId;
+
+            await group.save({ session });
+        });
+
+        if (errorResponse) {
+            return res.status(errorResponse.status).json({
+                success: false,
+                message: errorResponse.message,
+            });
+        }
+
+        await group.populate(
+            "members.userId",
+            "fullName profilePic email"
+        );
+
+        await group.populate("ownerId", "fullName profilePic");
+
+        io.to(groupId.toString()).emit("groupUpdated", {
+            group,
+        });
+
+        await createGroupSystemMessage({
+            groupId,
+            actorId: userId,
+            event: "ownership_transferred",
+            text: `${previousOwnerName} transferred group ownership to ${newOwnerName}.`,
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: "Group ownership transferred successfully.",
+            group,
+        });
+    } catch (error) {
+        console.error("Error in transferGroupOwnership:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to transfer group ownership.",
+        });
+    } finally {
+        await session.endSession();
     }
 };
 

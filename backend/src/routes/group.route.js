@@ -9,6 +9,7 @@ import {
     removeMember,
     leaveGroup,
     updateMemberRole,
+    transferGroupOwnership,
     deleteGroup,
 } from "../controllers/group.controller.js";
 
@@ -30,6 +31,7 @@ router.post("/:groupId/members", addMembers);
 router.delete("/:groupId/members/:memberId", removeMember);
 router.post("/:groupId/leave", leaveGroup);
 router.patch("/:groupId/members/:memberId/role", updateMemberRole);
+router.patch("/:groupId/transfer-ownership", transferGroupOwnership);
 router.delete("/:groupId", deleteGroup);
 router.patch("/:groupId", updateGroupDetails);
 
