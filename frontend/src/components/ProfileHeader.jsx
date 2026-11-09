@@ -11,6 +11,7 @@ import {
   CameraIcon,
   Trash2Icon,
   SaveIcon,
+  MoreVerticalIcon,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -31,6 +32,8 @@ function ProfileHeader() {
   const [isPushEnabled, setIsPushEnabled] = useState(false);
   const [isPushLoading, setIsPushLoading] = useState(false);
 
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -39,6 +42,7 @@ function ProfileHeader() {
   const [selectedImg, setSelectedImg] = useState(null);
 
   const fileInputRef = useRef(null);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     const checkPushSubscription = async () => {
@@ -56,6 +60,28 @@ function ProfileHeader() {
     };
 
     checkPushSubscription();
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setIsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, []);
 
   const openEditModal = () => {
@@ -180,10 +206,24 @@ function ProfileHeader() {
     }
   };
 
+  const handleSoundToggle = () => {
+    mouseClickSound.currentTime = 0;
+
+    mouseClickSound.play().catch((error) =>
+      console.log("Audio play failed:", error)
+    );
+
+    toggleSound();
+    setIsMenuOpen(false);
+  };
+
   const profileImage =
     selectedImg !== null
       ? selectedImg || "/avatar.png"
       : authUser?.profilePic || "/avatar.png";
+
+  const menuItemClass =
+    "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
     <>
@@ -216,60 +256,96 @@ function ProfileHeader() {
 
               <p className="text-slate-400 text-xs">Online</p>
             </div>
-
-            <button
-              type="button"
-              onClick={openEditModal}
-              className="text-slate-400 hover:text-cyan-400 transition-colors"
-              title="Edit profile"
-            >
-              <PencilIcon className="size-4" />
-            </button>
           </div>
 
-          <div className="flex gap-4 items-center shrink-0">
+          <div className="relative shrink-0" ref={menuRef}>
             <button
-              title={
-                isPushEnabled
-                  ? "Disable notifications"
-                  : "Enable notifications"
-              }
-              disabled={isPushLoading}
-              className="text-slate-400 hover:text-cyan-400 transition-colors disabled:opacity-50"
-              onClick={handlePushToggle}
+              type="button"
+              onClick={() => setIsMenuOpen((prev) => !prev)}
+              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/60 transition-colors"
+              title="More options"
+              aria-label="More options"
+              aria-expanded={isMenuOpen}
+              aria-haspopup="true"
             >
-              {isPushEnabled ? (
-                <BellIcon className="size-5" />
-              ) : (
-                <BellOffIcon className="size-5" />
-              )}
+              <MoreVerticalIcon className="size-5" />
             </button>
 
-            <button
-              className="text-slate-400 hover:text-slate-200 transition-colors"
-              onClick={logout}
-              title="Logout"
-            >
-              <LogOutIcon className="size-5" />
-            </button>
+            {isMenuOpen && (
+              <div className="absolute right-0 top-12 z-50 w-60 rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-2">
+                <div className="px-3 py-2 border-b border-slate-700 mb-1">
+                  <p className="text-sm font-semibold text-white truncate">
+                    {authUser?.fullName}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Account options
+                  </p>
+                </div>
 
-            <button
-              className="text-slate-400 hover:text-slate-200 transition-colors"
-              onClick={() => {
-                mouseClickSound.currentTime = 0;
-                mouseClickSound.play().catch((error) =>
-                  console.log("Audio play failed:", error)
-                );
-                toggleSound();
-              }}
-              title="Toggle sound"
-            >
-              {isSoundEnabled ? (
-                <Volume2Icon className="size-5" />
-              ) : (
-                <VolumeOffIcon className="size-5" />
-              )}
-            </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    openEditModal();
+                  }}
+                  className={menuItemClass}
+                >
+                  <PencilIcon className="size-4 shrink-0" />
+                  <span>Edit Profile</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    handlePushToggle();
+                  }}
+                  disabled={isPushLoading}
+                  className={menuItemClass}
+                >
+                  {isPushEnabled ? (
+                    <BellIcon className="size-4 shrink-0" />
+                  ) : (
+                    <BellOffIcon className="size-4 shrink-0" />
+                  )}
+
+                  <span>
+                    {isPushLoading
+                      ? "Updating..."
+                      : isPushEnabled
+                        ? "Disable Notifications"
+                        : "Enable Notifications"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSoundToggle}
+                  className={menuItemClass}
+                >
+                  {isSoundEnabled ? (
+                    <Volume2Icon className="size-4 shrink-0" />
+                  ) : (
+                    <VolumeOffIcon className="size-4 shrink-0" />
+                  )}
+
+                  <span>
+                    {isSoundEnabled ? "Turn Sound Off" : "Turn Sound On"}
+                  </span>
+                </button>
+
+                <div className="border-t border-slate-700 my-1" />
+
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <LogOutIcon className="size-4 shrink-0" />
+                  <span>Logout</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -321,7 +397,10 @@ function ProfileHeader() {
                   <button
                     type="button"
                     onClick={handleRemovePhoto}
-                    disabled={isSaving || (!authUser?.profilePic && selectedImg === null)}
+                    disabled={
+                      isSaving ||
+                      (!authUser?.profilePic && selectedImg === null)
+                    }
                     className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 transition-colors disabled:opacity-40"
                   >
                     <Trash2Icon className="size-4" />
