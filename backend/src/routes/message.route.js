@@ -8,6 +8,7 @@ import {
   toggleMessageReaction,
   editMessage,
   deleteMessage,
+  searchMessages,
   getGroupMessages,
   sendGroupMessage,
 } from "../controllers/message.controller.js";
@@ -24,6 +25,9 @@ router.get("/chats", getChatPartners);
 // Group messaging routes
 router.get("/groups/:id", getGroupMessages);
 router.post("/groups/:id", sendGroupMessage);
+
+// Message search route
+router.get("/search", searchMessages);
 
 // Direct messaging routes
 router.get("/:id", getMessagesByUserId);

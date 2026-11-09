@@ -13,6 +13,17 @@ export const useChatStore = create((set, get) => ({
     allContacts: [],
     chats: [],
     messages: [],
+
+    searchResults: [],
+    isSearching: false,
+    searchPagination: {
+        page: 1,
+        limit: 20,
+        totalResults: 0,
+        totalPages: 0,
+        hasMore: false,
+    },
+
     groups: [],
     formerGroups: [],
     activeTab: "chats",
@@ -497,6 +508,52 @@ export const useChatStore = create((set, get) => ({
         } finally {
             set({ isMessagesLoading: false });
         }
+    },
+
+
+    searchMessages: async (filters = {}, page = 1, append = false) => {
+        set({ isSearching: true });
+
+        try {
+            const res = await axiosInstance.get("/messages/search", {
+                params: {
+                    ...filters,
+                    page,
+                    limit: 20,
+                },
+            });
+
+            set((state) => ({
+                searchResults: append
+                    ? [...state.searchResults, ...res.data.results]
+                    : res.data.results,
+                searchPagination: res.data.pagination,
+            }));
+
+            return res.data;
+        } catch (error) {
+            toast.error(
+                error.response?.data?.message || "Unable to search messages."
+            );
+
+            return null;
+        } finally {
+            set({ isSearching: false });
+        }
+    },
+
+    clearSearch: () => {
+        set({
+            searchResults: [],
+            isSearching: false,
+            searchPagination: {
+                page: 1,
+                limit: 20,
+                totalResults: 0,
+                totalPages: 0,
+                hasMore: false,
+            },
+        });
     },
 
     sendMessage: async (messageData) => {

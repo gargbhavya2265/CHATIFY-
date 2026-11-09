@@ -43,14 +43,15 @@ const messageSchema = new mongoose.Schema(
       default: false,
     },
     systemEvent: {
-      type: String,
-      enum: [
-        "members_added",
-        "member_removed",
-        "member_left",
-        "role_updated",
-      ],
-      default: null,
+        type: String,
+        enum: [
+            "members_added",
+            "member_removed",
+            "member_left",
+            "role_updated",
+            "ownership_transferred",
+        ],
+        default: null,
     },
     senderId: {
       type: mongoose.Schema.Types.ObjectId,

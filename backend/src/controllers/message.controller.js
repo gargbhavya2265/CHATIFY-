@@ -786,3 +786,278 @@ export const deleteMessage = async (req, res) => {
         });
     }
 };
+
+
+export const searchMessages = async (req, res) => {
+    try {
+        const userId = req.user._id;
+
+        const {
+            q = "",
+            type = "all",
+            senderId,
+            from,
+            to,
+            media = "all",
+            page = "1",
+            limit = "20",
+        } = req.query;
+
+        const searchText = q.trim();
+
+        if (
+            !["all", "direct", "group"].includes(type) ||
+            !["all", "images", "text"].includes(media)
+        ) {
+            return res.status(400).json({
+                message: "Invalid search filters.",
+            });
+        }
+
+        if (searchText.length > 200) {
+            return res.status(400).json({
+                message: "Search query cannot exceed 200 characters.",
+            });
+        }
+
+        if (senderId && !mongoose.Types.ObjectId.isValid(senderId)) {
+            return res.status(400).json({
+                message: "Invalid sender ID.",
+            });
+        }
+
+        const currentPage = Number(page);
+        const pageSize = Number(limit);
+
+        if (
+            !Number.isInteger(currentPage) ||
+            currentPage < 1 ||
+            !Number.isInteger(pageSize) ||
+            pageSize < 1 ||
+            pageSize > 50
+        ) {
+            return res.status(400).json({
+                message: "Invalid pagination values.",
+            });
+        }
+
+        const dateFilter = {};
+
+        if (from) {
+            const fromDate = new Date(from);
+
+            if (Number.isNaN(fromDate.getTime())) {
+                return res.status(400).json({
+                    message: "Invalid start date.",
+                });
+            }
+
+            dateFilter.$gte = fromDate;
+        }
+
+        if (to) {
+            const toDate = new Date(to);
+
+            if (Number.isNaN(toDate.getTime())) {
+                return res.status(400).json({
+                    message: "Invalid end date.",
+                });
+            }
+
+            toDate.setHours(23, 59, 59, 999);
+            dateFilter.$lte = toDate;
+        }
+
+        if (
+            dateFilter.$gte &&
+            dateFilter.$lte &&
+            dateFilter.$gte > dateFilter.$lte
+        ) {
+            return res.status(400).json({
+                message: "Start date cannot be after end date.",
+            });
+        }
+
+        const escapedQuery = searchText.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            "\\$&"
+        );
+
+        const filters = [
+            {
+                isDeleted: { $ne: true },
+                isSystemMessage: { $ne: true },
+            },
+        ];
+
+        if (searchText) {
+            filters.push({
+                text: {
+                    $regex: escapedQuery,
+                    $options: "i",
+                },
+            });
+        }
+
+        if (media === "images") {
+            filters.push({
+                image: { $exists: true, $ne: "" },
+            });
+        } else if (media === "text") {
+            filters.push({
+                text: { $exists: true, $ne: "" },
+                image: { $in: [null, ""] },
+            });
+        }
+
+        if (senderId) {
+            filters.push({
+                senderId: new mongoose.Types.ObjectId(senderId),
+            });
+        }
+
+        if (Object.keys(dateFilter).length > 0) {
+            filters.push({
+                createdAt: dateFilter,
+            });
+        }
+
+        const conversationFilters = [];
+
+        if (type === "all" || type === "direct") {
+            conversationFilters.push({
+                messageType: { $in: ["direct", null] },
+                $or: [
+                    { senderId: userId },
+                    { receiverId: userId },
+                ],
+            });
+        }
+
+        if (type === "all" || type === "group") {
+            const accessibleGroups = await Group.find({
+                $or: [
+                    { "members.userId": userId },
+                    { "formerMembers.userId": userId },
+                ],
+            }).select("_id");
+
+            const groupIds = accessibleGroups.map((group) => group._id);
+
+            if (groupIds.length > 0) {
+                conversationFilters.push({
+                    messageType: "group",
+                    groupId: { $in: groupIds },
+                });
+            }
+        }
+
+        if (conversationFilters.length === 0) {
+            return res.status(200).json({
+                results: [],
+                pagination: {
+                    page: currentPage,
+                    limit: pageSize,
+                    totalResults: 0,
+                    totalPages: 0,
+                    hasMore: false,
+                },
+            });
+        }
+
+        filters.push({
+            $or: conversationFilters,
+        });
+
+        const query = { $and: filters };
+
+        const totalResults = await Message.countDocuments(query);
+
+        const results = await Message.find(query)
+            .populate("senderId", "fullName profilePic")
+            .populate("groupId", "name groupPic")
+            .populate("replyTo", "text image senderId")
+            .sort({ createdAt: -1, _id: -1 })
+            .skip((currentPage - 1) * pageSize)
+            .limit(pageSize)
+            .lean();
+
+        const directPartnerIds = [
+            ...new Set(
+                results
+                    .filter((message) => message.messageType !== "group")
+                    .map((message) => {
+                        const sender = message.senderId?._id?.toString();
+                        const receiver = message.receiverId?.toString();
+
+                        return sender === userId.toString()
+                            ? receiver
+                            : sender;
+                    })
+                    .filter(Boolean)
+            ),
+        ];
+
+        const directPartners = await User.find({
+            _id: { $in: directPartnerIds },
+        }).select("fullName profilePic");
+
+        const partnerMap = new Map(
+            directPartners.map((user) => [
+                user._id.toString(),
+                user,
+            ])
+        );
+
+        const formattedResults = results.map((message) => {
+            if (message.messageType === "group") {
+                return {
+                    ...message,
+                    chat: {
+                        type: "group",
+                        id: message.groupId?._id,
+                        name: message.groupId?.name,
+                        groupPic: message.groupId?.groupPic,
+                    },
+                };
+            }
+
+            const sender = message.senderId?._id?.toString();
+            const receiver = message.receiverId?.toString();
+
+            const partnerId =
+                sender === userId.toString() ? receiver : sender;
+
+            const partner = partnerMap.get(partnerId);
+
+            return {
+                ...message,
+                chat: {
+                    type: "direct",
+                    id: partner?._id,
+                    name: partner?.fullName,
+                    profilePic: partner?.profilePic,
+                },
+            };
+        });
+
+        const totalPages = Math.ceil(totalResults / pageSize);
+
+        return res.status(200).json({
+            results: formattedResults,
+            pagination: {
+                page: currentPage,
+                limit: pageSize,
+                totalResults,
+                totalPages,
+                hasMore: currentPage < totalPages,
+            },
+        });
+    } catch (error) {
+        console.error("Error in searchMessages:", error.message);
+
+        return res.status(500).json({
+            message: "Internal server error.",
+        });
+    }
+};
