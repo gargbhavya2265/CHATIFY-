@@ -368,7 +368,7 @@ function ChatContainer() {
                       {/* Floating Message Toolbar */}
                       {showToolbar && (
                         <div
-                          className={`absolute z-40 -top-11 ${
+                          className={`absolute z-40 top-full mt-2 ${
                             isOwnMessage ? "right-0" : "left-0"
                           } flex items-center gap-1 p-1.5 rounded-xl border border-slate-600/70 bg-slate-900/95 backdrop-blur-xl shadow-xl opacity-100 md:opacity-0 md:translate-y-1 md:group-hover/message:opacity-100 md:group-hover/message:translate-y-0 md:group-focus-within/message:opacity-100 md:group-focus-within/message:translate-y-0 transition-all duration-200`}
                         >
