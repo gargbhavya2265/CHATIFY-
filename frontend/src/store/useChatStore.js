@@ -1,12 +1,48 @@
-
 import { create } from "zustand";
 import { axiosInstance } from "../lib/axios";
 import toast from "react-hot-toast";
 import { useAuthStore } from "./useAuthStore";
 
+let directMessagesRequestId = 0;
+
 const getSelectedGroupStorageKey = () => {
     const userId = useAuthStore.getState().authUser?._id;
     return userId ? `chatify_selected_group_${userId}` : null;
+};
+
+const getSelectedChatStorageKey = () => {
+    const userId = useAuthStore.getState().authUser?._id;
+    return userId ? `chatify_selected_chat_${userId}` : null;
+};
+
+const updateProfileReferences = (value, updatedProfile) => {
+    if (Array.isArray(value)) {
+        return value.map((item) =>
+            updateProfileReferences(item, updatedProfile)
+        );
+    }
+
+    if (!value || typeof value !== "object" || value instanceof Date) {
+        return value;
+    }
+
+    const updatedValue = Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [
+            key,
+            updateProfileReferences(item, updatedProfile),
+        ])
+    );
+
+    if (
+        updatedValue._id?.toString() === updatedProfile._id?.toString()
+    ) {
+        return {
+            ...updatedValue,
+            ...updatedProfile,
+        };
+    }
+
+    return updatedValue;
 };
 
 export const useChatStore = create((set, get) => ({
@@ -42,6 +78,8 @@ export const useChatStore = create((set, get) => ({
     socketListeners: null,
     groupSocketListeners: null,
     groupCreatedListener: null,
+    profileUpdatedListener: null,
+
     isSoundEnabled: JSON.parse(localStorage.getItem("isSoundEnabled")) === true,
 
     toggleSound: () => {
@@ -84,10 +122,19 @@ export const useChatStore = create((set, get) => ({
     setSelectedUser: (selectedUser) => {
         get().unsubscribeFromGroupMessages();
 
-        const storageKey = getSelectedGroupStorageKey();
+        const groupStorageKey = getSelectedGroupStorageKey();
+        const chatStorageKey = getSelectedChatStorageKey();
 
-        if (storageKey) {
-            localStorage.removeItem(storageKey);
+        if (groupStorageKey) {
+            localStorage.removeItem(groupStorageKey);
+        }
+
+        if (chatStorageKey) {
+            if (selectedUser?._id) {
+                localStorage.setItem(chatStorageKey, selectedUser._id);
+            } else {
+                localStorage.removeItem(chatStorageKey);
+            }
         }
 
         set({
@@ -101,6 +148,12 @@ export const useChatStore = create((set, get) => ({
 
     setSelectedGroup: (selectedGroup) => {
         get().unsubscribeFromMessages();
+
+        const chatStorageKey = getSelectedChatStorageKey();
+
+        if (chatStorageKey) {
+            localStorage.removeItem(chatStorageKey);
+        }
 
         const storageKey = getSelectedGroupStorageKey();
 
@@ -142,9 +195,57 @@ export const useChatStore = create((set, get) => ({
 
         try {
             const res = await axiosInstance.get("/messages/chats");
-            set({ chats: res.data });
+            const chats = res.data;
+
+            const chatStorageKey = getSelectedChatStorageKey();
+            const groupStorageKey = getSelectedGroupStorageKey();
+
+            const savedChatId = chatStorageKey
+                ? localStorage.getItem(chatStorageKey)
+                : null;
+
+            const savedGroupId = groupStorageKey
+                ? localStorage.getItem(groupStorageKey)
+                : null;
+
+            const currentSelectedUser = get().selectedUser;
+            const currentSelectedGroup = get().selectedGroup;
+
+            let updatedSelectedUser = currentSelectedUser;
+
+            if (!currentSelectedGroup && !savedGroupId) {
+                if (currentSelectedUser) {
+                    updatedSelectedUser =
+                        chats.find(
+                            (chat) =>
+                                chat._id?.toString() ===
+                                currentSelectedUser._id?.toString()
+                        ) || null;
+                } else if (savedChatId) {
+                    updatedSelectedUser =
+                        chats.find(
+                            (chat) => chat._id?.toString() === savedChatId
+                        ) || null;
+                }
+
+                if (savedChatId && !updatedSelectedUser && chatStorageKey) {
+                    localStorage.removeItem(chatStorageKey);
+                }
+            }
+
+            set({
+                chats,
+                ...(updatedSelectedUser !== currentSelectedUser
+                    ? { selectedUser: updatedSelectedUser }
+                    : {}),
+                ...(!currentSelectedGroup && !savedGroupId && updatedSelectedUser
+                    ? { activeTab: "chats" }
+                    : {}),
+            });
         } catch (error) {
-            toast.error(error.response?.data?.message || "Something went wrong");
+            toast.error(
+                error.response?.data?.message || "Something went wrong"
+            );
         } finally {
             set({ isUsersLoading: false });
         }
@@ -226,6 +327,89 @@ export const useChatStore = create((set, get) => ({
         } finally {
             set({ isFormerGroupsLoading: false });
         }
+    },
+
+
+    subscribeToProfileUpdates: () => {
+        const socket = useAuthStore.getState().socket;
+
+        if (!socket) return;
+
+        get().unsubscribeFromProfileUpdates();
+
+        const handleProfileUpdated = (updatedProfile = {}) => {
+            if (!updatedProfile?._id) return;
+
+            const updatedUserId = updatedProfile._id.toString();
+            const currentAuthUser = useAuthStore.getState().authUser;
+
+            if (currentAuthUser?._id?.toString() === updatedUserId) {
+                useAuthStore.setState({
+                    authUser: {
+                        ...currentAuthUser,
+                        ...updatedProfile,
+                    },
+                });
+            }
+
+            set((state) => ({
+                allContacts: updateProfileReferences(
+                    state.allContacts,
+                    updatedProfile
+                ),
+                chats: updateProfileReferences(state.chats, updatedProfile),
+                searchResults: updateProfileReferences(
+                    state.searchResults,
+                    updatedProfile
+                ),
+                selectedUser: updateProfileReferences(
+                    state.selectedUser,
+                    updatedProfile
+                ),
+                viewingProfile: updateProfileReferences(
+                    state.viewingProfile,
+                    updatedProfile
+                ),
+                messages: updateProfileReferences(
+                    state.messages,
+                    updatedProfile
+                ),
+                groups: updateProfileReferences(state.groups, updatedProfile),
+                formerGroups: updateProfileReferences(
+                    state.formerGroups,
+                    updatedProfile
+                ),
+                selectedGroup: updateProfileReferences(
+                    state.selectedGroup,
+                    updatedProfile
+                ),
+            }));
+
+            console.log(
+                "Profile synchronized:",
+                updatedProfile.fullName,
+                updatedUserId
+            );
+        };
+
+        socket.on("profileUpdated", handleProfileUpdated);
+
+        set({
+            profileUpdatedListener: handleProfileUpdated,
+        });
+    },
+
+    unsubscribeFromProfileUpdates: () => {
+        const socket = useAuthStore.getState().socket;
+        const listener = get().profileUpdatedListener;
+
+        if (socket && listener) {
+            socket.off("profileUpdated", listener);
+        }
+
+        set({
+            profileUpdatedListener: null,
+        });
     },
 
     subscribeToGroupCreated: () => {
@@ -464,10 +648,22 @@ export const useChatStore = create((set, get) => ({
     },
 
     getMessagesByUserId: async (userId) => {
+        const requestId = ++directMessagesRequestId;
+        const requestedUserId = userId.toString();
+
         set({ isMessagesLoading: true });
 
         try {
             const res = await axiosInstance.get(`/messages/${userId}`);
+
+            const currentSelectedUserId = get().selectedUser?._id?.toString();
+
+            if (
+                requestId !== directMessagesRequestId ||
+                currentSelectedUserId !== requestedUserId
+            ) {
+                return;
+            }
 
             set({
                 messages: res.data,
@@ -476,9 +672,15 @@ export const useChatStore = create((set, get) => ({
 
             await get().getMyChatPartners();
         } catch (error) {
-            toast.error(error.response?.data?.message || "Something went wrong");
+            if (requestId === directMessagesRequestId) {
+                toast.error(
+                    error.response?.data?.message || "Something went wrong"
+                );
+            }
         } finally {
-            set({ isMessagesLoading: false });
+            if (requestId === directMessagesRequestId) {
+                set({ isMessagesLoading: false });
+            }
         }
     },
 
@@ -509,7 +711,6 @@ export const useChatStore = create((set, get) => ({
             set({ isMessagesLoading: false });
         }
     },
-
 
     searchMessages: async (filters = {}, page = 1, append = false) => {
         set({ isSearching: true });
@@ -931,10 +1132,12 @@ export const useChatStore = create((set, get) => ({
             socket.off("userStoppedTyping", listeners.handleUserStoppedTyping);
             socket.off("messagesDelivered", listeners.handleMessagesDelivered);
             socket.off("messagesRead", listeners.handleMessagesRead);
+
             socket.off(
                 "messageReactionUpdated",
                 listeners.handleMessageReactionUpdated
             );
+
             socket.off("messageUpdated", listeners.handleMessageUpdated);
             socket.off("messageDeleted", listeners.handleMessageDeleted);
         }
@@ -1058,10 +1261,12 @@ export const useChatStore = create((set, get) => ({
             socket.off("newGroupMessage", listeners.handleNewGroupMessage);
             socket.off("messageUpdated", listeners.updateGroupMessage);
             socket.off("messageDeleted", listeners.updateGroupMessage);
+
             socket.off(
                 "messageReactionUpdated",
                 listeners.updateGroupMessage
             );
+
             socket.off("groupUpdated", listeners.handleGroupUpdated);
         }
 

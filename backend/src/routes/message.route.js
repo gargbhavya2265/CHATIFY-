@@ -1,3 +1,4 @@
+
 import express from "express";
 import {
   getAllContacts,
@@ -8,6 +9,7 @@ import {
   toggleMessageReaction,
   editMessage,
   deleteMessage,
+  deleteChat,
   searchMessages,
   getGroupMessages,
   sendGroupMessage,
@@ -21,6 +23,7 @@ router.use(arcjetProtection, protectRoute);
 
 router.get("/contacts", getAllContacts);
 router.get("/chats", getChatPartners);
+router.delete("/chats/:id", deleteChat);
 
 // Group messaging routes
 router.get("/groups/:id", getGroupMessages);

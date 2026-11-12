@@ -123,6 +123,7 @@ export const getMyGroups = async (req, res) => {
 
         const groups = await Group.find({
             "members.userId": userId,
+            dismissedBy: { $ne: userId },
         })
             .populate("members.userId", "fullName profilePic email")
             .populate("createdBy", "fullName profilePic")
@@ -143,6 +144,7 @@ export const getMyGroups = async (req, res) => {
 };
 
 // GET MY FORMER GROUPS (ARCHIVED GROUPS)
+// GET MY FORMER GROUPS (ARCHIVED GROUPS)
 export const getMyFormerGroups = async (req, res) => {
     try {
         const userId = req.user._id;
@@ -150,6 +152,7 @@ export const getMyFormerGroups = async (req, res) => {
         const groups = await Group.find({
             "formerMembers.userId": userId,
             "members.userId": { $ne: userId },
+            dismissedBy: { $ne: userId },
         })
             .populate("members.userId", "fullName profilePic email")
             .populate("createdBy", "fullName profilePic")
@@ -357,6 +360,7 @@ export const updateGroupDetails = async (req, res) => {
 };
 
 // ADD MEMBERS TO GROUP
+// ADD MEMBERS TO GROUP
 export const addMembers = async (req, res) => {
     try {
         const { groupId } = req.params;
@@ -462,6 +466,12 @@ export const addMembers = async (req, res) => {
         group.formerMembers = group.formerMembers.filter(
             (member) =>
                 !uniqueMemberIds.includes(member.userId.toString())
+        );
+
+        // Restore the group in the active group list for rejoining users.
+        group.dismissedBy = group.dismissedBy.filter(
+            (memberId) =>
+                !uniqueMemberIds.includes(memberId.toString())
         );
 
         group.members.push(
@@ -611,6 +621,22 @@ export const removeMember = async (req, res) => {
                 member.userId.toString() !== memberId
         );
 
+        // Dismiss the group for the removed member.
+        group.dismissedBy.addToSet(memberId);
+
+        // Hide existing group messages only for the removed member.
+        await Message.updateMany(
+            {
+                messageType: "group",
+                groupId,
+            },
+            {
+                $addToSet: {
+                    hiddenFor: memberId,
+                },
+            }
+        );
+
         await group.save();
 
         await group.populate(
@@ -719,6 +745,22 @@ export const leaveGroup = async (req, res) => {
         group.members = group.members.filter(
             (member) =>
                 member.userId.toString() !== userId.toString()
+        );
+
+        // Dismiss the group for the leaving member.
+        group.dismissedBy.addToSet(userId);
+
+        // Hide existing group messages only for the leaving member.
+        await Message.updateMany(
+            {
+                messageType: "group",
+                groupId,
+            },
+            {
+                $addToSet: {
+                    hiddenFor: userId,
+                },
+            }
         );
 
         await group.save();

@@ -55,10 +55,17 @@ function ChatContainer() {
   ]);
 
   useEffect(() => {
-    if (messageEndRef.current) {
-      messageEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages]);
+    if (isMessagesLoading || !messageEndRef.current) return;
+
+    const frameId = requestAnimationFrame(() => {
+      messageEndRef.current?.scrollIntoView({
+        behavior: "auto",
+        block: "end",
+      });
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [messages, isMessagesLoading]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {

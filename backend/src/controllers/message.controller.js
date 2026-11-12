@@ -91,6 +91,7 @@ export const getMessagesByUserId = async (req, res) => {
             senderId: userToChatId,
             receiverId: myId,
             status: { $ne: "read" },
+            hiddenFor: { $ne: myId },
         }).select("_id");
 
         const messageIds = unreadMessages.map((message) => message._id);
@@ -121,11 +122,12 @@ export const getMessagesByUserId = async (req, res) => {
 
         const messages = await Message.find({
             messageType: { $in: ["direct", null] },
+            hiddenFor: { $ne: myId },
             $or: [
                 { senderId: myId, receiverId: userToChatId },
                 { senderId: userToChatId, receiverId: myId },
             ],
-        }).populate("replyTo", "text image senderId");
+        }).populate("replyTo", "text image senderId").sort({ createdAt: 1 });
 
         res.status(200).json(messages);
     } catch (error) {
@@ -158,6 +160,7 @@ export const getGroupMessages = async (req, res) => {
         const messages = await Message.find({
             messageType: "group",
             groupId,
+            hiddenFor: { $ne: userId },
         })
             .populate("senderId", "fullName profilePic")
             .populate("replyTo", "text image senderId")
@@ -443,6 +446,7 @@ export const getChatPartners = async (req, res) => {
             {
                 $match: {
                     messageType: { $in: ["direct", null] },
+                    hiddenFor: { $ne: loggedInUserId },
                     $or: [
                         { senderId: loggedInUserId },
                         { receiverId: loggedInUserId },
@@ -888,6 +892,9 @@ export const searchMessages = async (req, res) => {
                 isDeleted: { $ne: true },
                 isSystemMessage: { $ne: true },
             },
+            {
+                hiddenFor: { $ne: userId },
+            },
         ];
 
         if (searchText) {
@@ -936,6 +943,7 @@ export const searchMessages = async (req, res) => {
 
         if (type === "all" || type === "group") {
             const accessibleGroups = await Group.find({
+                dismissedBy: { $ne: userId },
                 $or: [
                     { "members.userId": userId },
                     { "formerMembers.userId": userId },
@@ -1055,6 +1063,54 @@ export const searchMessages = async (req, res) => {
         });
     } catch (error) {
         console.error("Error in searchMessages:", error.message);
+
+        return res.status(500).json({
+            message: "Internal server error.",
+        });
+    }
+};
+
+export const deleteChat = async (req, res) => {
+    try {
+        const myId = req.user._id;
+        const { id: userToChatId } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(userToChatId)) {
+            return res.status(400).json({
+                message: "Invalid user ID.",
+            });
+        }
+
+        if (myId.toString() === userToChatId) {
+            return res.status(400).json({
+                message: "You cannot delete a chat with yourself.",
+            });
+        }
+
+        await Message.updateMany(
+            {
+                messageType: { $in: ["direct", null] },
+                $or: [
+                    { senderId: myId, receiverId: userToChatId },
+                    { senderId: userToChatId, receiverId: myId },
+                ],
+            },
+            {
+                $addToSet: {
+                    hiddenFor: myId,
+                },
+            }
+        );
+
+        io.to(myId.toString()).emit("chatDeleted", {
+            chatId: userToChatId,
+        });
+
+        return res.status(200).json({
+            message: "Chat deleted successfully.",
+        });
+    } catch (error) {
+        console.error("Error in deleteChat:", error.message);
 
         return res.status(500).json({
             message: "Internal server error.",

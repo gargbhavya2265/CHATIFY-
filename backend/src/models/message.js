@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const reactionSchema = new mongoose.Schema(
@@ -43,15 +44,15 @@ const messageSchema = new mongoose.Schema(
       default: false,
     },
     systemEvent: {
-        type: String,
-        enum: [
-            "members_added",
-            "member_removed",
-            "member_left",
-            "role_updated",
-            "ownership_transferred",
-        ],
-        default: null,
+      type: String,
+      enum: [
+        "members_added",
+        "member_removed",
+        "member_left",
+        "role_updated",
+        "ownership_transferred",
+      ],
+      default: null,
     },
     senderId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -97,6 +98,15 @@ const messageSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    hiddenFor: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+      ],
+      default: [],
+    },
     replyTo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Message",
@@ -129,6 +139,7 @@ const messageSchema = new mongoose.Schema(
 
 messageSchema.index({ groupId: 1, createdAt: -1 });
 messageSchema.index({ senderId: 1, receiverId: 1, createdAt: -1 });
+messageSchema.index({ hiddenFor: 1 });
 
 const Message = mongoose.model("Message", messageSchema);
 

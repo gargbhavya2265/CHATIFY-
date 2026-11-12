@@ -1,3 +1,4 @@
+
 import { Navigate, Route, Routes } from "react-router";
 import { useEffect } from "react";
 import { Toaster, toast } from "react-hot-toast";
@@ -17,6 +18,8 @@ function App() {
     const {
         subscribeToGroupCreated,
         unsubscribeFromGroupCreated,
+        subscribeToProfileUpdates,
+        unsubscribeFromProfileUpdates,
         getMyGroups,
         getMyFormerGroups,
         setSelectedGroup,
@@ -40,6 +43,22 @@ function App() {
         socket,
         subscribeToGroupCreated,
         unsubscribeFromGroupCreated,
+    ]);
+
+    // Global profile update listener.
+    useEffect(() => {
+        if (!authUser || !socket) return;
+
+        subscribeToProfileUpdates();
+
+        return () => {
+            unsubscribeFromProfileUpdates();
+        };
+    }, [
+        authUser,
+        socket,
+        subscribeToProfileUpdates,
+        unsubscribeFromProfileUpdates,
     ]);
 
     // Global group details update listener.

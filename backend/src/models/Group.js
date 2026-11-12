@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const groupMemberSchema = new mongoose.Schema(
@@ -103,12 +104,22 @@ const groupSchema = new mongoose.Schema(
             type: [formerGroupMemberSchema],
             default: [],
         },
+        dismissedBy: {
+            type: [
+                {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: "User",
+                },
+            ],
+            default: [],
+        },
     },
     { timestamps: true }
 );
 
 groupSchema.index({ "members.userId": 1 });
 groupSchema.index({ "formerMembers.userId": 1 });
+groupSchema.index({ dismissedBy: 1 });
 groupSchema.index({ updatedAt: -1 });
 
 const Group = mongoose.model("Group", groupSchema);
