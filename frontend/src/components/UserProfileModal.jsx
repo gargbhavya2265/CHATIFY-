@@ -7,6 +7,7 @@ import {
     UserRound,
     Pencil,
     Check,
+    Mail,
 } from "lucide-react";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
@@ -46,13 +47,28 @@ function UserProfileModal() {
         closeUserProfile,
     } = useChatStore();
 
-    const { socket, updateProfile } = useAuthStore();
+    const {
+        socket,
+        updateProfile,
+        onlineUsers,
+        lastSeenUpdates,
+    } = useAuthStore();
 
     const [isEditing, setIsEditing] = useState(false);
     const [about, setAbout] = useState("");
     const [isSaving, setIsSaving] = useState(false);
     const [isImageOpen, setIsImageOpen] = useState(false);
     const [error, setError] = useState("");
+
+    const profileUserId = viewingProfile?._id?.toString();
+
+    const isOnline = profileUserId
+        ? onlineUsers.some((id) => String(id) === profileUserId)
+        : false;
+
+    const lastSeen =
+        (profileUserId && lastSeenUpdates[profileUserId]) ||
+        viewingProfile?.lastSeen;
 
     useEffect(() => {
         setAbout(viewingProfile?.about || "");
@@ -214,6 +230,15 @@ function UserProfileModal() {
                                         <UserRound className="size-4" />
                                         Chatify Member
                                     </p>
+
+                                    {viewingProfile.email && (
+                                        <p className="mt-3 flex items-center gap-2 text-sm text-slate-400">
+                                            <Mail className="size-4 shrink-0" />
+                                            <span className="break-all">
+                                                {viewingProfile.email}
+                                            </span>
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="space-y-3 border-t border-slate-700/70 p-5">
@@ -313,11 +338,19 @@ function UserProfileModal() {
 
                                         <div>
                                             <p className="text-xs text-slate-400">
-                                                Last Seen
+                                                {isOnline ? "Status" : "Last Seen"}
                                             </p>
-                                            <p className="mt-1 text-sm font-medium text-slate-200">
-                                                {formatLastSeen(viewingProfile.lastSeen)}
-                                            </p>
+
+                                            {isOnline ? (
+                                                <p className="mt-1 flex items-center gap-2 text-sm font-medium text-emerald-400">
+                                                    <span className="size-2 rounded-full bg-emerald-400" />
+                                                    Online
+                                                </p>
+                                            ) : (
+                                                <p className="mt-1 text-sm font-medium text-slate-200">
+                                                    {formatLastSeen(lastSeen)}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
