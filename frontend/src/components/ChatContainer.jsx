@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+
+import { Fragment, useEffect, useRef, useState } from "react";
+
 import {
   Check,
   CheckCheck,
@@ -9,9 +11,12 @@ import {
   X,
   Save,
 } from "lucide-react";
+
 import EmojiPicker from "emoji-picker-react";
+
 import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
+
 import ChatHeader from "./ChatHeader";
 import NoChatHistoryPlaceholder from "./NoChatHistoryPlaceholder";
 import MessageInput from "./MessageInput";
@@ -35,13 +40,17 @@ function ChatContainer() {
 
   const messageEndRef = useRef(null);
   const reactionPickerRef = useRef(null);
+  const hasScrolledToInitialPosition = useRef(false);
 
   const [activeReactionPicker, setActiveReactionPicker] = useState(null);
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editedText, setEditedText] = useState("");
 
+  // Reset initial scroll whenever selected user changes.
   useEffect(() => {
     if (!selectedUser?._id) return;
+
+    hasScrolledToInitialPosition.current = false;
 
     getMessagesByUserId(selectedUser._id);
     subscribeToMessages();
@@ -54,19 +63,39 @@ function ChatContainer() {
     unsubscribeFromMessages,
   ]);
 
+  // Scroll to the first unread message when opening a chat.
+  // If there are no unread messages, scroll to the bottom.
   useEffect(() => {
-    if (isMessagesLoading || !messageEndRef.current) return;
+    if (
+      isMessagesLoading ||
+      hasScrolledToInitialPosition.current
+    ) {
+      return;
+    }
 
     const frameId = requestAnimationFrame(() => {
-      messageEndRef.current?.scrollIntoView({
+      const firstUnreadMessage = messages.find(
+        (message) => message.wasUnreadBeforeOpening
+      );
+
+      const target = firstUnreadMessage
+        ? document.getElementById(
+            `message-${firstUnreadMessage._id}`
+          )
+        : messageEndRef.current;
+
+      (target || messageEndRef.current)?.scrollIntoView({
         behavior: "auto",
-        block: "end",
+        block: firstUnreadMessage ? "center" : "end",
       });
+
+      hasScrolledToInitialPosition.current = true;
     });
 
     return () => cancelAnimationFrame(frameId);
   }, [messages, isMessagesLoading]);
 
+  // Close emoji picker when clicking outside.
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (
@@ -83,6 +112,52 @@ function ChatContainer() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
+
+  // Date separator helpers.
+  const getDateKey = (date) => {
+    const messageDate = new Date(date);
+
+    if (Number.isNaN(messageDate.getTime())) return "";
+
+    const year = messageDate.getFullYear();
+    const month = String(messageDate.getMonth() + 1).padStart(2, "0");
+    const day = String(messageDate.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  };
+
+  const getDateLabel = (date) => {
+    const messageDate = new Date(date);
+
+    const today = new Date();
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (getDateKey(messageDate) === getDateKey(today)) {
+      return "Today";
+    }
+
+    if (getDateKey(messageDate) === getDateKey(yesterday)) {
+      return "Yesterday";
+    }
+
+    return messageDate.toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  };
+
+  // Find unread messages.
+  const unreadMessages = messages.filter(
+    (message) => message.wasUnreadBeforeOpening
+  );
+
+  const firstUnreadMessageId =
+    unreadMessages[0]?._id?.toString();
+
+  const unreadCount = unreadMessages.length;
 
   const renderMessageStatus = (status) => {
     if (status === "read") {
@@ -119,7 +194,6 @@ function ChatContainer() {
 
   const handleEditSave = async (messageId) => {
     if (!editedText.trim()) return;
-
     if (editedText.trim().length > 2000) return;
 
     await editMessage(messageId, editedText.trim());
@@ -203,7 +277,10 @@ function ChatContainer() {
                   alt="Replied image"
                   className="w-10 h-10 object-cover rounded"
                 />
-                <span className="text-xs opacity-80">Photo</span>
+
+                <span className="text-xs opacity-80">
+                  Photo
+                </span>
               </div>
             )}
           </>
@@ -219,9 +296,40 @@ function ChatContainer() {
       <div className="flex-1 px-6 overflow-y-auto py-8">
         {messages.length > 0 && !isMessagesLoading ? (
           <div className="max-w-3xl mx-auto space-y-6">
-            {messages.map((msg) => {
+
+            {messages.map((msg, index) => {
+              const previousMessage = messages[index - 1];
+
+              const showDateSeparator =
+                index === 0 ||
+                getDateKey(previousMessage.createdAt) !==
+                  getDateKey(msg.createdAt);
+
+              const dateSeparator = showDateSeparator ? (
+                <div className="flex justify-center my-5">
+                  <span className="text-xs font-medium text-slate-300 bg-slate-800/90 border border-slate-700 rounded-full px-4 py-1.5 shadow-sm">
+                    {getDateLabel(msg.createdAt)}
+                  </span>
+                </div>
+              ) : null;
+
+              const unreadDivider =
+                msg._id?.toString() === firstUnreadMessageId ? (
+                  <div className="flex items-center gap-3 my-6">
+                    <div className="flex-1 h-px bg-cyan-500/50" />
+
+                    <span className="text-xs font-semibold text-cyan-300 whitespace-nowrap">
+                      {unreadCount} unread{" "}
+                      {unreadCount === 1 ? "message" : "messages"}
+                    </span>
+
+                    <div className="flex-1 h-px bg-cyan-500/50" />
+                  </div>
+                ) : null;
+
               const isOwnMessage =
-                msg.senderId?.toString() === authUser._id?.toString();
+                msg.senderId?.toString() ===
+                authUser._id?.toString();
 
               const isDeleted = msg.isDeleted === true;
               const isEditing = editingMessageId === msg._id;
@@ -240,210 +348,237 @@ function ChatContainer() {
 
               const myReaction = reactions.find(
                 (reaction) =>
-                  reaction.userId?.toString() === authUser._id?.toString()
+                  reaction.userId?.toString() ===
+                  authUser._id?.toString()
               );
 
               return (
-                <div
-                  key={msg._id}
-                  id={`message-${msg._id}`}
-                  className={`chat ${
-                    isOwnMessage ? "chat-end" : "chat-start"
-                  }`}
-                >
-                  <div className="relative max-w-[85%]">
-                    <div
-                      className={`chat-bubble relative transition-all duration-300 ${
-                        isDeleted
-                          ? "bg-slate-700/70 text-slate-300"
-                          : isOwnMessage
-                          ? "bg-cyan-600 text-white"
-                          : "bg-slate-800 text-slate-200"
-                      }`}
-                    >
-                      {msg.replyTo && renderReplyPreview(msg.replyTo)}
+                <Fragment key={msg._id}>
+                  {dateSeparator}
+                  {unreadDivider}
 
-                      {isEditing ? (
-                        <div className="min-w-[220px]">
-                          <textarea
-                            value={editedText}
-                            onChange={(e) => setEditedText(e.target.value)}
-                            maxLength={2000}
-                            rows={3}
-                            autoFocus
-                            className="w-full resize-none rounded-lg bg-slate-900 text-white border border-cyan-400 p-3 outline-none"
-                          />
+                  <div
+                    id={`message-${msg._id}`}
+                    className={`chat ${
+                      isOwnMessage ? "chat-end" : "chat-start"
+                    }`}
+                  >
+                    <div className="relative max-w-[85%]">
+                      <div
+                        className={`chat-bubble relative transition-all duration-300 ${
+                          isDeleted
+                            ? "bg-slate-700/70 text-slate-300"
+                            : isOwnMessage
+                            ? "bg-cyan-600 text-white"
+                            : "bg-slate-800 text-slate-200"
+                        }`}
+                      >
+                        {msg.replyTo &&
+                          renderReplyPreview(msg.replyTo)}
 
-                          <div className="flex justify-between items-center mt-2">
-                            <span className="text-xs opacity-70">
-                              {editedText.length}/2000
-                            </span>
+                        {isEditing ? (
+                          <div className="min-w-[220px]">
+                            <textarea
+                              value={editedText}
+                              onChange={(e) =>
+                                setEditedText(e.target.value)
+                              }
+                              maxLength={2000}
+                              rows={3}
+                              autoFocus
+                              className="w-full resize-none rounded-lg bg-slate-900 text-white border border-cyan-400 p-3 outline-none"
+                            />
 
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={handleEditCancel}
-                                className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600"
-                                title="Cancel"
-                              >
-                                <X size={16} />
-                              </button>
+                            <div className="flex justify-between items-center mt-2">
+                              <span className="text-xs opacity-70">
+                                {editedText.length}/2000
+                              </span>
 
-                              <button
-                                type="button"
-                                onClick={() => handleEditSave(msg._id)}
-                                disabled={
-                                  !editedText.trim() ||
-                                  editedText.length > 2000
-                                }
-                                className="p-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50"
-                                title="Save changes"
-                              >
-                                <Save size={16} />
-                              </button>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={handleEditCancel}
+                                  className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600"
+                                  title="Cancel"
+                                >
+                                  <X size={16} />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleEditSave(msg._id)
+                                  }
+                                  disabled={
+                                    !editedText.trim() ||
+                                    editedText.length > 2000
+                                  }
+                                  className="p-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50"
+                                  title="Save changes"
+                                >
+                                  <Save size={16} />
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ) : isDeleted ? (
-                        <p className="italic text-sm opacity-80">
-                          This message was deleted
-                        </p>
-                      ) : (
-                        <>
-                          {msg.image && (
-                            <img
-                              src={msg.image}
-                              alt="Shared"
-                              className="rounded-lg h-48 object-cover"
-                            />
-                          )}
-
-                          {msg.text && (
-                            <p className="mt-2 whitespace-pre-wrap break-words">
-                              {msg.text}
-                            </p>
-                          )}
-                        </>
-                      )}
-
-                      <p className="text-xs mt-1 opacity-75 flex items-center justify-end gap-1">
-                        {msg.isEdited && !isDeleted && (
-                          <span className="italic mr-1">Edited</span>
-                        )}
-
-                        {new Date(msg.createdAt).toLocaleTimeString(
-                          undefined,
-                          {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          }
-                        )}
-
-                        {isOwnMessage &&
-                          !isDeleted &&
-                          renderMessageStatus(msg.status)}
-                      </p>
-                    </div>
-
-                    {!isDeleted && !isEditing && (
-                      <div className="flex items-center gap-2 mt-1">
-                        <button
-                          type="button"
-                          onClick={() => handleReply(msg)}
-                          className="text-slate-400 hover:text-cyan-400 transition-colors p-1"
-                          title="Reply"
-                          disabled={
-                            !msg._id || msg._id.startsWith("temp-")
-                          }
-                        >
-                          <CornerUpLeft size={17} />
-                        </button>
-
-                        {isOwnMessage ? (
-                          <>
-                            {msg.text && (
-                              <button
-                                type="button"
-                                onClick={() => handleEditClick(msg)}
-                                className="text-slate-400 hover:text-cyan-400 transition-colors p-1"
-                                title="Edit message"
-                              >
-                                <Pencil size={16} />
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(msg._id)}
-                              className="text-slate-400 hover:text-red-400 transition-colors p-1"
-                              title="Delete message"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </>
+                        ) : isDeleted ? (
+                          <p className="italic text-sm opacity-80">
+                            This message was deleted
+                          </p>
                         ) : (
-                          <div className="relative" ref={reactionPickerRef}>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setActiveReactionPicker(
-                                  activeReactionPicker === msg._id
-                                    ? null
-                                    : msg._id
-                                )
-                              }
-                              className="text-slate-400 hover:text-cyan-400 transition-colors p-1"
-                              title="Add reaction"
-                            >
-                              <SmilePlus size={17} />
-                            </button>
-
-                            {activeReactionPicker === msg._id && (
-                              <div className="absolute z-50 bottom-full left-0 mb-2 shadow-2xl">
-                                <EmojiPicker
-                                  onEmojiClick={(emojiData) =>
-                                    handleReaction(msg._id, emojiData.emoji)
-                                  }
-                                  theme="dark"
-                                  width={300}
-                                  height={350}
-                                  previewConfig={{ showPreview: false }}
-                                />
-                              </div>
+                          <>
+                            {msg.image && (
+                              <img
+                                src={msg.image}
+                                alt="Shared"
+                                className="rounded-lg h-48 object-cover"
+                              />
                             )}
-                          </div>
+
+                            {msg.text && (
+                              <p className="mt-2 whitespace-pre-wrap break-words">
+                                {msg.text}
+                              </p>
+                            )}
+                          </>
                         )}
 
-                        {Object.entries(groupedReactions).map(
-                          ([emoji, count]) =>
-                            isOwnMessage ? (
-                              <span
-                                key={emoji}
-                                className="flex items-center gap-1 rounded-full px-2 py-1 text-sm border bg-slate-800 border-slate-700 text-slate-300"
-                              >
-                                <span>{emoji}</span>
-                                <span>{count}</span>
-                              </span>
-                            ) : (
-                              <button
-                                key={emoji}
-                                type="button"
-                                onClick={() => handleReaction(msg._id, emoji)}
-                                className={`flex items-center gap-1 rounded-full px-2 py-1 text-sm border transition-colors ${
-                                  myReaction?.emoji === emoji
-                                    ? "bg-cyan-500/20 border-cyan-400 text-cyan-300"
-                                    : "bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500"
-                                }`}
-                              >
-                                <span>{emoji}</span>
-                                <span>{count}</span>
-                              </button>
-                            )
-                        )}
+                        <p className="text-xs mt-1 opacity-75 flex items-center justify-end gap-1">
+                          {msg.isEdited && !isDeleted && (
+                            <span className="italic mr-1">
+                              Edited
+                            </span>
+                          )}
+
+                          {new Date(msg.createdAt).toLocaleTimeString(
+                            undefined,
+                            {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            }
+                          )}
+
+                          {isOwnMessage &&
+                            !isDeleted &&
+                            renderMessageStatus(msg.status)}
+                        </p>
                       </div>
-                    )}
+
+                      {!isDeleted && !isEditing && (
+                        <div className="flex items-center gap-2 mt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleReply(msg)}
+                            className="text-slate-400 hover:text-cyan-400 transition-colors p-1"
+                            title="Reply"
+                            disabled={
+                              !msg._id ||
+                              msg._id.startsWith("temp-")
+                            }
+                          >
+                            <CornerUpLeft size={17} />
+                          </button>
+
+                          {isOwnMessage ? (
+                            <>
+                              {msg.text && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleEditClick(msg)
+                                  }
+                                  className="text-slate-400 hover:text-cyan-400 transition-colors p-1"
+                                  title="Edit message"
+                                >
+                                  <Pencil size={16} />
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleDelete(msg._id)
+                                }
+                                className="text-slate-400 hover:text-red-400 transition-colors p-1"
+                                title="Delete message"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </>
+                          ) : (
+                            <div
+                              className="relative"
+                              ref={reactionPickerRef}
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setActiveReactionPicker(
+                                    activeReactionPicker === msg._id
+                                      ? null
+                                      : msg._id
+                                  )
+                                }
+                                className="text-slate-400 hover:text-cyan-400 transition-colors p-1"
+                                title="Add reaction"
+                              >
+                                <SmilePlus size={17} />
+                              </button>
+
+                              {activeReactionPicker === msg._id && (
+                                <div className="absolute z-50 bottom-full left-0 mb-2 shadow-2xl">
+                                  <EmojiPicker
+                                    onEmojiClick={(emojiData) =>
+                                      handleReaction(
+                                        msg._id,
+                                        emojiData.emoji
+                                      )
+                                    }
+                                    theme="dark"
+                                    width={300}
+                                    height={350}
+                                    previewConfig={{
+                                      showPreview: false,
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {Object.entries(groupedReactions).map(
+                            ([emoji, count]) =>
+                              isOwnMessage ? (
+                                <span
+                                  key={emoji}
+                                  className="flex items-center gap-1 rounded-full px-2 py-1 text-sm border bg-slate-800 border-slate-700 text-slate-300"
+                                >
+                                  <span>{emoji}</span>
+                                  <span>{count}</span>
+                                </span>
+                              ) : (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  onClick={() =>
+                                    handleReaction(msg._id, emoji)
+                                  }
+                                  className={`flex items-center gap-1 rounded-full px-2 py-1 text-sm border transition-colors ${
+                                    myReaction?.emoji === emoji
+                                      ? "bg-cyan-500/20 border-cyan-400 text-cyan-300"
+                                      : "bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500"
+                                  }`}
+                                >
+                                  <span>{emoji}</span>
+                                  <span>{count}</span>
+                                </button>
+                              )
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                </Fragment>
               );
             })}
 

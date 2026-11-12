@@ -1186,7 +1186,7 @@ export const useChatStore = create((set, get) => ({
 
             set((state) => {
                 const alreadyExists = state.messages.some(
-                    (message) => message._id === newMessage._id
+                    (message) => message._id?.toString() === newMessage._id?.toString()
                 );
 
                 if (alreadyExists) return state;
@@ -1217,10 +1217,54 @@ export const useChatStore = create((set, get) => ({
 
             set((state) => ({
                 messages: state.messages.map((message) =>
-                    message._id === updatedMessage._id
+                    message._id?.toString() === updatedMessage._id.toString()
                         ? updatedMessage
                         : message
                 ),
+            }));
+        };
+
+        const handleGroupMessagesRead = ({
+            groupId: eventGroupId,
+            readerId,
+            messageIds,
+            readAt,
+        } = {}) => {
+            if (eventGroupId?.toString() !== groupId) return;
+
+            if (!readerId || !Array.isArray(messageIds)) return;
+
+            const readMessageIds = new Set(
+                messageIds.map((id) => id.toString())
+            );
+
+            set((state) => ({
+                messages: state.messages.map((message) => {
+                    if (!readMessageIds.has(message._id?.toString())) {
+                        return message;
+                    }
+
+                    const alreadyRead = message.readBy?.some((reader) => {
+                        const existingReaderId = (
+                            reader.userId?._id || reader.userId
+                        )?.toString();
+
+                        return existingReaderId === readerId.toString();
+                    });
+
+                    if (alreadyRead) return message;
+
+                    return {
+                        ...message,
+                        readBy: [
+                            ...(message.readBy || []),
+                            {
+                                userId: readerId,
+                                readAt,
+                            },
+                        ],
+                    };
+                }),
             }));
         };
 
@@ -1245,12 +1289,14 @@ export const useChatStore = create((set, get) => ({
         socket.on("messageDeleted", updateGroupMessage);
         socket.on("messageReactionUpdated", updateGroupMessage);
         socket.on("groupUpdated", handleGroupUpdated);
+        socket.on("groupMessagesRead", handleGroupMessagesRead);
 
         set({
             groupSocketListeners: {
                 handleNewGroupMessage,
                 updateGroupMessage,
                 handleGroupUpdated,
+                handleGroupMessagesRead,
             },
         });
     },
@@ -1260,16 +1306,35 @@ export const useChatStore = create((set, get) => ({
         const listeners = get().groupSocketListeners;
 
         if (socket && listeners) {
-            socket.off("newGroupMessage", listeners.handleNewGroupMessage);
-            socket.off("messageUpdated", listeners.updateGroupMessage);
-            socket.off("messageDeleted", listeners.updateGroupMessage);
+            socket.off(
+                "newGroupMessage",
+                listeners.handleNewGroupMessage
+            );
+
+            socket.off(
+                "messageUpdated",
+                listeners.updateGroupMessage
+            );
+
+            socket.off(
+                "messageDeleted",
+                listeners.updateGroupMessage
+            );
 
             socket.off(
                 "messageReactionUpdated",
                 listeners.updateGroupMessage
             );
 
-            socket.off("groupUpdated", listeners.handleGroupUpdated);
+            socket.off(
+                "groupUpdated",
+                listeners.handleGroupUpdated
+            );
+
+            socket.off(
+                "groupMessagesRead",
+                listeners.handleGroupMessagesRead
+            );
         }
 
         set({

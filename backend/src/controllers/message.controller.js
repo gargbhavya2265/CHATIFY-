@@ -75,6 +75,7 @@ export const getAllContacts = async (req, res) => {
     }
 };
 
+
 export const getMessagesByUserId = async (req, res) => {
     try {
         const myId = req.user._id;
@@ -95,6 +96,11 @@ export const getMessagesByUserId = async (req, res) => {
         }).select("_id");
 
         const messageIds = unreadMessages.map((message) => message._id);
+
+        // Preserve unread message IDs before marking them as read.
+        const unreadMessageIds = new Set(
+            messageIds.map((id) => id.toString())
+        );
 
         if (messageIds.length > 0) {
             await Message.updateMany(
@@ -127,9 +133,24 @@ export const getMessagesByUserId = async (req, res) => {
                 { senderId: myId, receiverId: userToChatId },
                 { senderId: userToChatId, receiverId: myId },
             ],
-        }).populate("replyTo", "text image senderId").sort({ createdAt: 1 });
+        })
+            .populate("replyTo", "text image senderId")
+            .sort({ createdAt: 1 });
 
-        res.status(200).json(messages);
+        // Attach temporary unread metadata for the frontend.
+        // This property is not persisted in MongoDB.
+        const messagesWithUnreadMetadata = messages.map((message) => {
+            const messageObject = message.toObject();
+
+            return {
+                ...messageObject,
+                wasUnreadBeforeOpening: unreadMessageIds.has(
+                    message._id.toString()
+                ),
+            };
+        });
+
+        res.status(200).json(messagesWithUnreadMetadata);
     } catch (error) {
         console.log("Error in getMessages controller:", error.message);
         res.status(500).json({ error: "Internal server error" });
@@ -166,8 +187,89 @@ export const getGroupMessages = async (req, res) => {
             .populate("replyTo", "text image senderId")
             .sort({ createdAt: 1 });
 
+        const unreadMessages = membership.isActiveMember
+            ? messages.filter((message) => {
+                  const senderId =
+                      message.senderId?._id?.toString() ||
+                      message.senderId?.toString();
+
+                  const alreadyRead = message.readBy.some(
+                      (reader) => reader.userId.toString() === userId.toString()
+                  );
+
+                  return (
+                      !message.isSystemMessage &&
+                      senderId !== userId.toString() &&
+                      !alreadyRead
+                  );
+              })
+            : [];
+
+        const readAt = new Date();
+
+        const readResults = await Promise.all(
+            unreadMessages.map(async (message) => {
+                const result = await Message.updateOne(
+                    {
+                        _id: message._id,
+                        readBy: {
+                            $not: {
+                                $elemMatch: { userId },
+                            },
+                        },
+                    },
+                    {
+                        $push: {
+                            readBy: {
+                                userId,
+                                readAt,
+                            },
+                        },
+                    }
+                );
+
+                return {
+                    messageId: message._id.toString(),
+                    updated: result.modifiedCount > 0,
+                };
+            })
+        );
+
+        const newlyReadMessageIds = readResults
+            .filter((result) => result.updated)
+            .map((result) => result.messageId);
+
+        const newlyReadMessageIdSet = new Set(newlyReadMessageIds);
+
+        const responseMessages = messages.map((message) => {
+            const messageId = message._id.toString();
+            const wasUnreadBeforeOpening =
+                newlyReadMessageIdSet.has(messageId);
+
+            if (wasUnreadBeforeOpening) {
+                message.readBy.push({
+                    userId,
+                    readAt,
+                });
+            }
+
+            return {
+                ...message.toObject(),
+                wasUnreadBeforeOpening,
+            };
+        });
+
+        if (newlyReadMessageIds.length > 0) {
+            io.to(groupId.toString()).emit("groupMessagesRead", {
+                groupId: groupId.toString(),
+                readerId: userId.toString(),
+                messageIds: newlyReadMessageIds,
+                readAt,
+            });
+        }
+
         // Keep the existing array response format for frontend compatibility.
-        res.status(200).json(messages);
+        res.status(200).json(responseMessages);
     } catch (error) {
         console.error("Error in getGroupMessages:", error.message);
         res.status(500).json({

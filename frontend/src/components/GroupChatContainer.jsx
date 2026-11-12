@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   XIcon,
   Users,
@@ -67,6 +67,10 @@ function GroupChatContainer() {
   const [editedText, setEditedText] = useState("");
 
   const bottomRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+  const hasInitialScrollRef = useRef(false);
+  const hasObservedLoadingRef = useRef(false);
+  const isNearBottomRef = useRef(true);
   const pickerRef = useRef(null);
   const groupPicInputRef = useRef(null);
 
@@ -75,6 +79,9 @@ function GroupChatContainer() {
 
   useEffect(() => {
     if (!groupId) return;
+    hasObservedLoadingRef.current = false;
+    hasInitialScrollRef.current = false;
+    isNearBottomRef.current = true;
 
     getGroupMessages(groupId);
     subscribeToGroupMessages();
@@ -90,8 +97,33 @@ function GroupChatContainer() {
   ]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (isMessagesLoading) {
+      hasObservedLoadingRef.current = true;
+      return;
+    }
+    if (!hasObservedLoadingRef.current) return;
+
+    if (!hasInitialScrollRef.current) {
+      const firstUnreadElement = firstUnreadMessageId
+        ? document.getElementById(`group-message-${firstUnreadMessageId}`)
+        : null;
+
+      if (firstUnreadElement) {
+        firstUnreadElement.scrollIntoView({ behavior: "auto", block: "center" });
+        isNearBottomRef.current = false;
+      } else {
+        bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+        isNearBottomRef.current = true;
+      }
+
+      hasInitialScrollRef.current = true;
+      return;
+    }
+
+    if (isNearBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [messages, isMessagesLoading, firstUnreadMessageId]);
 
    useEffect(() => {
     const handleEscKey = (event) => {
@@ -155,6 +187,14 @@ function GroupChatContainer() {
   };
 
   const currentUserId = getUserId(authUser);
+  const unreadMessages = isFormerMember
+    ? []
+    : messages.filter(
+        (message) =>
+          message.wasUnreadBeforeOpening && !message.isSystemMessage
+      );
+  const firstUnreadMessageId = unreadMessages[0]?._id?.toString();
+  const unreadCount = unreadMessages.length;
 
   const currentMember = members.find(
     (member) => getUserId(member.userId) === currentUserId
@@ -473,6 +513,34 @@ function GroupChatContainer() {
     });
   };
 
+  const getDateKey = (date) => {
+    const messageDate = new Date(date);
+
+    return `${messageDate.getFullYear()}-${messageDate.getMonth()}-${messageDate.getDate()}`;
+  };
+
+  const getDateLabel = (date) => {
+    const messageDate = new Date(date);
+    const today = new Date();
+    const yesterday = new Date();
+
+    yesterday.setDate(today.getDate() - 1);
+
+    if (getDateKey(messageDate) === getDateKey(today)) {
+      return "Today";
+    }
+
+    if (getDateKey(messageDate) === getDateKey(yesterday)) {
+      return "Yesterday";
+    }
+
+    return messageDate.toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  };
+
   const getRoleLabel = (role) => {
     if (!role) return "Member";
 
@@ -614,7 +682,14 @@ function GroupChatContainer() {
         )}
 
         {/* Group Messages */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+        <div
+          ref={messagesContainerRef}
+          onScroll={(event) => {
+            const { scrollHeight, scrollTop, clientHeight } = event.currentTarget;
+            isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 120;
+          }}
+          className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4"
+        >
           {isMessagesLoading ? (
             <div className="flex justify-center items-center h-full">
               <span className="loading loading-spinner loading-lg text-cyan-400" />
@@ -636,16 +711,38 @@ function GroupChatContainer() {
               </p>
             </div>
           ) : (
-            messages.map((message) => {
+            messages.map((message, index) => {
+              const previousMessage = messages[index - 1];
+              const showDateSeparator =
+                !previousMessage ||
+                getDateKey(previousMessage.createdAt) !==
+                  getDateKey(message.createdAt);
+              const dateSeparator = showDateSeparator ? (
+                <div className="flex justify-center py-3">
+                  <span className="text-xs font-medium text-slate-400 bg-slate-800/80 border border-slate-700/70 rounded-full px-3 py-1">
+                    {getDateLabel(message.createdAt)}
+                  </span>
+                </div>
+              ) : null;
+              const unreadDivider =
+                message._id?.toString() === firstUnreadMessageId ? (
+                  <div className="flex items-center gap-3 py-3">
+                    <div className="flex-1 h-px bg-cyan-500/50" />
+                    <span className="text-xs font-medium text-cyan-400 whitespace-nowrap">
+                      {unreadCount} unread {unreadCount === 1 ? "message" : "messages"}
+                    </span>
+                    <div className="flex-1 h-px bg-cyan-500/50" />
+                  </div>
+                ) : null;
               if (message.isSystemMessage) {
                 const eventDetails = getSystemEventDetails(message);
                 const EventIcon = eventDetails.icon;
 
                 return (
-                  <div
-                    key={message._id}
-                    className="flex justify-center w-full py-2"
-                  >
+                  <Fragment key={message._id}>
+                    {dateSeparator}
+                    {unreadDivider}
+                    <div className="flex justify-center w-full py-2">
                     <div className="flex items-center gap-2 max-w-[85%] px-4 py-2.5 rounded-full bg-slate-800/80 border border-slate-700/70 shadow-sm">
                       <EventIcon
                         className={`w-4 h-4 shrink-0 ${eventDetails.color}`}
@@ -660,6 +757,7 @@ function GroupChatContainer() {
                       </span>
                     </div>
                   </div>
+                  </Fragment>
                 );
               }
 
@@ -669,8 +767,11 @@ function GroupChatContainer() {
               const replyMessage = message.replyTo;
 
               return (
-                <div
-                  key={message._id}
+                <Fragment key={message._id}>
+                  {dateSeparator}
+                  {unreadDivider}
+                  <div
+                    id={`group-message-${message._id}`}
                   className={`flex gap-2 ${
                     own ? "justify-end" : "justify-start"
                   }`}
@@ -897,6 +998,7 @@ function GroupChatContainer() {
                     )}
                   </div>
                 </div>
+                </Fragment>
               );
             })
           )}
