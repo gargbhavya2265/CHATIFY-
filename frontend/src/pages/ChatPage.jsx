@@ -1,5 +1,5 @@
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 
@@ -14,96 +14,68 @@ import GroupChatContainer from "../components/GroupChatContainer";
 import NoConversationPlaceholder from "../components/NoConversationPlaceholder";
 
 function ChatPage() {
-    const {
-        activeTab,
-        selectedUser,
-        selectedGroup,
-        getMyChatPartners,
-        getMyGroups,
-        getMyFormerGroups,
-        getAllContacts,
-    } = useChatStore();
+  const {
+    activeTab,
+    selectedUser,
+    selectedGroup,
+    getMyChatPartners,
+    getMyGroups,
+  } = useChatStore();
 
-    const { socket } = useAuthStore();
+  const { socket } = useAuthStore();
 
-    const hasFetchedInitialData = useRef(false);
+  useEffect(() => {
+    if (!socket) return;
 
-    // Fetch initial data only once.
-    useEffect(() => {
-        if (hasFetchedInitialData.current) return;
+    const refreshChats = () => {
+      getMyChatPartners();
+      getMyGroups();
+    };
 
-        hasFetchedInitialData.current = true;
+    socket.on("newMessage", refreshChats);
+    socket.on("newGroupMessage", refreshChats);
+    socket.on("connect", refreshChats);
 
-        getMyChatPartners();
-        getMyGroups();
-        getMyFormerGroups();
-        getAllContacts();
-    }, [
-        getMyChatPartners,
-        getMyGroups,
-        getMyFormerGroups,
-        getAllContacts,
-    ]);
+    refreshChats();
 
-    // Handle socket events.
-    useEffect(() => {
-        if (!socket) return;
+    return () => {
+      socket.off("newMessage", refreshChats);
+      socket.off("newGroupMessage", refreshChats);
+      socket.off("connect", refreshChats);
+    };
+  }, [socket, getMyChatPartners, getMyGroups]);
 
-        let hasConnectedOnce = socket.connected;
+  return (
+    <div className="chatify-page chatify-workspace relative z-10 h-[min(860px,calc(100dvh-2.5rem))] min-h-[620px] w-full max-w-[1480px]">
+      <BorderAnimatedContainer>
+        {/* LEFT SIDE */}
+        <div className="chatify-sidebar w-[292px] shrink-0 min-h-0 border-r border-white/[0.07] bg-slate-950/45 backdrop-blur-xl flex flex-col max-md:w-[260px]">
+          <ProfileHeader />
 
-        const refreshChats = () => {
-            getMyChatPartners();
-            getMyGroups();
-        };
+          <ActiveTabSwitch />
 
-        const handleConnect = () => {
-            if (!hasConnectedOnce) {
-                hasConnectedOnce = true;
-                return;
-            }
+          <div className="chatify-sidebar-content flex-1 min-h-0 overflow-y-auto p-4 space-y-2">
+            {activeTab === "chats" && <ChatsList />}
 
-            refreshChats();
-        };
+            {activeTab === "contacts" && <ContactList />}
 
-        socket.on("newMessage", refreshChats);
-        socket.on("newGroupMessage", refreshChats);
-        socket.on("connect", handleConnect);
-
-        return () => {
-            socket.off("newMessage", refreshChats);
-            socket.off("newGroupMessage", refreshChats);
-            socket.off("connect", handleConnect);
-        };
-    }, [socket, getMyChatPartners, getMyGroups]);
-
-    return (
-        <div className="relative w-full max-w-6xl h-[800px] min-h-0">
-            <BorderAnimatedContainer>
-                {/* LEFT SIDE */}
-                <div className="w-80 shrink-0 min-h-0 bg-slate-800/50 backdrop-blur-sm flex flex-col">
-                    <ProfileHeader />
-                    <ActiveTabSwitch />
-
-                    <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2">
-                        {activeTab === "chats" && <ChatsList />}
-                        {activeTab === "contacts" && <ContactList />}
-                        {activeTab === "groups" && <GroupsList />}
-                    </div>
-                </div>
-
-                {/* RIGHT SIDE */}
-                <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-slate-900/50 backdrop-blur-sm">
-                    {selectedUser ? (
-                        <ChatContainer />
-                    ) : selectedGroup ? (
-                        <GroupChatContainer key={`${selectedGroup._id}-${selectedGroup.isFormerMember === true}`}/>
-                    ) : (
-                        <NoConversationPlaceholder />
-                    )}
-                </div>
-            </BorderAnimatedContainer>
+            {activeTab === "groups" && <GroupsList />}
+          </div>
         </div>
-    );
+
+        {/* RIGHT SIDE */}
+        <div className="chatify-main flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-slate-900/35 backdrop-blur-xl">
+          {selectedUser ? (
+            <ChatContainer />
+          ) : selectedGroup ? (
+            <GroupChatContainer />
+          ) : (
+            <NoConversationPlaceholder />
+          )}
+        </div>
+      </BorderAnimatedContainer>
+    </div>
+  );
 }
 
 export default ChatPage;
