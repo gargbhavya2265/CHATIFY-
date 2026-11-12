@@ -6,7 +6,7 @@ export const getUserProfile = async (req, res) => {
     const { id } = req.params;
 
     const user = await User.findById(id)
-      .select("fullName profilePic about lastSeen createdAt")
+      .select("fullName email profilePic about lastSeen createdAt")
       .lean();
 
     if (!user) {
