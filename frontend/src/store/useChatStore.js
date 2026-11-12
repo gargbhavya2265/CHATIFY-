@@ -233,15 +233,13 @@ export const useChatStore = create((set, get) => ({
                 }
             }
 
-            set({
+            set((state) => ({
                 chats,
-                ...(updatedSelectedUser !== currentSelectedUser
+                ...(updatedSelectedUser?._id?.toString() !==
+                    state.selectedUser?._id?.toString()
                     ? { selectedUser: updatedSelectedUser }
                     : {}),
-                ...(!currentSelectedGroup && !savedGroupId && updatedSelectedUser
-                    ? { activeTab: "chats" }
-                    : {}),
-            });
+            }));
         } catch (error) {
             toast.error(
                 error.response?.data?.message || "Something went wrong"
@@ -286,11 +284,15 @@ export const useChatStore = create((set, get) => ({
                 ) || null
                 : restoredGroup || null;
 
-            set({
+            set((state) => ({
                 groups: groupsList,
                 selectedGroup: updatedSelectedGroup,
-                ...(updatedSelectedGroup ? { activeTab: "groups" } : {}),
-            });
+                ...(!currentSelectedGroup &&
+                    restoredGroup &&
+                    state.activeTab === "chats"
+                    ? { activeTab: "groups" }
+                    : {}),
+            }));
 
             if (savedGroupId && !restoredGroup && !currentSelectedGroup && storageKey) {
                 localStorage.removeItem(storageKey);
