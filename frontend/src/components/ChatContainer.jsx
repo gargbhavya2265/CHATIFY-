@@ -364,7 +364,7 @@ function ChatContainer() {
                       isOwnMessage ? "chat-end" : "chat-start"
                     }`}
                   >
-                    <div className="relative max-w-[85%] group/message">
+                    <div className="relative w-fit max-w-[85%] group/message">
                       {/* Floating Message Toolbar */}
                       {showToolbar && (
                         <div
@@ -433,7 +433,7 @@ function ChatContainer() {
 
                       {/* Message Bubble */}
                       <div
-                        className={`chat-bubble relative transition-all duration-300 ${
+                        className={`chat-bubble relative w-fit max-w-full transition-all duration-300 ${
                           isDeleted
                             ? "bg-slate-700/70 text-slate-300"
                             : isOwnMessage
