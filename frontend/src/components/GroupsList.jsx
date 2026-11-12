@@ -1,5 +1,5 @@
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useChatStore } from "../store/useChatStore";
 import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
 import toast from "react-hot-toast";
@@ -9,9 +9,6 @@ function GroupsList() {
     const {
         groups,
         formerGroups,
-        getMyGroups,
-        getMyFormerGroups,
-        getAllContacts,
         allContacts,
         isGroupsLoading,
         isUsersLoading,
@@ -25,12 +22,6 @@ function GroupsList() {
     const [search, setSearch] = useState("");
     const [selectedMembers, setSelectedMembers] = useState([]);
     const [isCreating, setIsCreating] = useState(false);
-
-    useEffect(() => {
-        getMyGroups();
-        getMyFormerGroups();
-        getAllContacts();
-    }, [getMyGroups, getMyFormerGroups, getAllContacts]);
 
     const filteredContacts = useMemo(() => {
         const query = search.trim().toLowerCase();

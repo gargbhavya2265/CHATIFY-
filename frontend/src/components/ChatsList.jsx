@@ -1,5 +1,3 @@
-
-import { useEffect } from "react";
 import { useChatStore } from "../store/useChatStore";
 import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
 import NoChatsFound from "./NoChatsFound";
@@ -40,7 +38,6 @@ function getLastMessagePreview(message) {
 
 function ChatsList() {
   const {
-    getMyChatPartners,
     chats,
     isUsersLoading,
     setSelectedUser,
@@ -48,10 +45,6 @@ function ChatsList() {
   } = useChatStore();
 
   const { onlineUsers } = useAuthStore();
-
-  useEffect(() => {
-    getMyChatPartners();
-  }, [getMyChatPartners]);
 
   const handleProfileClick = (event, userId) => {
     event.stopPropagation();

@@ -1,8 +1,9 @@
-
 import { create } from "zustand";
 import { axiosInstance } from "../lib/axios";
 import toast from "react-hot-toast";
 import { io } from "socket.io-client";
+
+let authCheckPromise = null;
 
 const BASE_URL =
     import.meta.env.MODE === "development"
@@ -18,17 +19,24 @@ export const useAuthStore = create((set, get) => ({
     onlineUsers: [],
     lastSeenUpdates: {},
 
-    checkAuth: async () => {
-        try {
-            const res = await axiosInstance.get("/auth/check");
-            set({ authUser: res.data });
-            get().connectSocket();
-        } catch (error) {
-            console.log("Error in authCheck:", error);
-            set({ authUser: null });
-        } finally {
-            set({ isCheckingAuth: false });
-        }
+    checkAuth: () => {
+        if (authCheckPromise) return authCheckPromise;
+
+        authCheckPromise = (async () => {
+            try {
+                const res = await axiosInstance.get("/auth/check");
+                set({ authUser: res.data });
+                get().connectSocket();
+            } catch (error) {
+                console.log("Error in authCheck:", error);
+                set({ authUser: null });
+            } finally {
+                set({ isCheckingAuth: false });
+                authCheckPromise = null;
+            }
+        })();
+
+        return authCheckPromise;
     },
 
     signup: async (data) => {
