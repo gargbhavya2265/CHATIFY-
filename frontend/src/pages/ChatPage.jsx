@@ -96,7 +96,7 @@ function ChatPage() {
                     {selectedUser ? (
                         <ChatContainer />
                     ) : selectedGroup ? (
-                        <GroupChatContainer />
+                        <GroupChatContainer key={`${selectedGroup._id}-${selectedGroup.isFormerMember === true}`}/>
                     ) : (
                         <NoConversationPlaceholder />
                     )}

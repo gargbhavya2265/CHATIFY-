@@ -54,8 +54,8 @@ function GroupChatContainer() {
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [showLeaveConfirmation, setShowLeaveConfirmation] = useState(false);
 
-  const [groupName, setGroupName] = useState("");
-  const [groupDescription, setGroupDescription] = useState("");
+  const [groupName, setGroupName] = useState(selectedGroup?.name || "");
+  const [groupDescription, setGroupDescription] = useState(selectedGroup?.description || "");
   const [isSavingGroupInfo, setIsSavingGroupInfo] = useState(false);
   const [isUploadingGroupPic, setIsUploadingGroupPic] = useState(false);
 
@@ -143,26 +143,6 @@ function GroupChatContainer() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
-
-    useEffect(() => {
-      setEditingMessageId(null);
-      setEditedText("");
-      setShowReactionPicker(null);
-      setShowMembers(false);
-      setShowGroupInfo(false);
-      setShowGroupPicPreview(false);
-      setShowAddMembers(false);
-      setShowLeaveConfirmation(false);
-    }, [groupId, isFormerMember]);
-
-  useEffect(() => {
-    setGroupName(selectedGroup?.name || "");
-    setGroupDescription(selectedGroup?.description || "");
-  }, [
-    groupId,
-    selectedGroup?.name,
-    selectedGroup?.description,
-  ]);
 
   if (!selectedGroup) return null;
 

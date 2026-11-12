@@ -1,4 +1,3 @@
-
 import { Navigate, Route, Routes } from "react-router";
 import { useEffect } from "react";
 import { Toaster, toast } from "react-hot-toast";
@@ -16,6 +15,7 @@ function App() {
     const { checkAuth, isCheckingAuth, authUser, socket } = useAuthStore();
 
     const {
+        viewingProfile,
         subscribeToGroupCreated,
         unsubscribeFromGroupCreated,
         subscribeToProfileUpdates,
@@ -249,7 +249,7 @@ function App() {
                 />
             </Routes>
 
-            <UserProfileModal />
+            <UserProfileModal key={viewingProfile?._id?.toString() || "closed"}/>
 
             <Toaster />
         </div>

@@ -55,7 +55,7 @@ function UserProfileModal() {
     } = useAuthStore();
 
     const [isEditing, setIsEditing] = useState(false);
-    const [about, setAbout] = useState("");
+    const [about, setAbout] = useState(viewingProfile?.about || "");
     const [isSaving, setIsSaving] = useState(false);
     const [isImageOpen, setIsImageOpen] = useState(false);
     const [error, setError] = useState("");
@@ -69,13 +69,6 @@ function UserProfileModal() {
     const lastSeen =
         (profileUserId && lastSeenUpdates[profileUserId]) ||
         viewingProfile?.lastSeen;
-
-    useEffect(() => {
-        setAbout(viewingProfile?.about || "");
-        setIsEditing(false);
-        setIsImageOpen(false);
-        setError("");
-    }, [viewingProfile?._id]);
 
     // Listen for real-time profile updates
     useEffect(() => {
