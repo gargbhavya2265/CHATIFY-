@@ -1,10 +1,11 @@
+
 import { Fragment, useEffect, useRef, useState } from "react";
 
 import {
   Check,
   CheckCheck,
-  SmilePlus,
-  CornerUpLeft,
+  Smile,
+  Reply,
   Pencil,
   Trash2,
   X,
@@ -62,10 +63,7 @@ function ChatContainer() {
   ]);
 
   useEffect(() => {
-    if (
-      isMessagesLoading ||
-      hasScrolledToInitialPosition.current
-    ) {
+    if (isMessagesLoading || hasScrolledToInitialPosition.current) {
       return;
     }
 
@@ -92,6 +90,7 @@ function ChatContainer() {
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (
+        activeReactionPicker &&
         reactionPickerRef.current &&
         !reactionPickerRef.current.contains(event.target)
       ) {
@@ -104,7 +103,7 @@ function ChatContainer() {
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, []);
+  }, [activeReactionPicker]);
 
   const getDateKey = (date) => {
     const messageDate = new Date(date);
@@ -182,12 +181,13 @@ function ChatContainer() {
   };
 
   const handleEditSave = async (messageId) => {
-    if (!editedText.trim() || editedText.trim().length > 2000) return;
+    const trimmedText = editedText.trim();
 
-    await editMessage(messageId, editedText.trim());
+    if (!trimmedText || trimmedText.length > 2000) return;
 
-    setEditingMessageId(null);
-    setEditedText("");
+    await editMessage(messageId, trimmedText);
+
+    handleEditCancel();
   };
 
   const handleDelete = async (messageId) => {
@@ -202,6 +202,8 @@ function ChatContainer() {
     if (editingMessageId === messageId) {
       handleEditCancel();
     }
+
+    setActiveReactionPicker(null);
   };
 
   const handleScrollToMessage = (messageId) => {
@@ -228,9 +230,9 @@ function ChatContainer() {
       replyTo.senderId?._id?.toString() ||
       replyTo.senderId?.toString();
 
-    return originalSenderId === authUser._id.toString()
+    return originalSenderId === authUser?._id?.toString()
       ? "You"
-      : selectedUser.fullName || selectedUser.username || "Contact";
+      : selectedUser?.fullName || selectedUser?.username || "Contact";
   };
 
   const renderReplyPreview = (replyTo) => {
@@ -327,7 +329,7 @@ function ChatContainer() {
                 ) : null;
 
               const isOwnMessage =
-                msg.senderId?.toString() === authUser._id?.toString();
+                msg.senderId?.toString() === authUser?._id?.toString();
 
               const isDeleted = msg.isDeleted === true;
               const isEditing = editingMessageId === msg._id;
@@ -338,6 +340,7 @@ function ChatContainer() {
                 (groups, reaction) => {
                   groups[reaction.emoji] =
                     (groups[reaction.emoji] || 0) + 1;
+
                   return groups;
                 },
                 {}
@@ -345,7 +348,7 @@ function ChatContainer() {
 
               const myReaction = reactions.find(
                 (reaction) =>
-                  reaction.userId?.toString() === authUser._id?.toString()
+                  reaction.userId?.toString() === authUser?._id?.toString()
               );
 
               const showToolbar = !isDeleted && !isEditing;
@@ -365,29 +368,33 @@ function ChatContainer() {
                       {/* Floating Message Toolbar */}
                       {showToolbar && (
                         <div
-                          className={`absolute z-30 -top-11 ${
+                          className={`absolute z-40 -top-11 ${
                             isOwnMessage ? "right-0" : "left-0"
-                          } flex items-center gap-1 p-1 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-xl shadow-black/30 backdrop-blur-xl opacity-100 sm:opacity-0 sm:translate-y-1 sm:group-hover/message:opacity-100 sm:group-hover/message:translate-y-0 sm:group-focus-within/message:opacity-100 sm:group-focus-within/message:translate-y-0 transition-all duration-200`}
+                          } flex items-center gap-1 p-1.5 rounded-xl border border-slate-600/70 bg-slate-900/95 backdrop-blur-xl shadow-xl opacity-100 md:opacity-0 md:translate-y-1 md:group-hover/message:opacity-100 md:group-hover/message:translate-y-0 md:group-focus-within/message:opacity-100 md:group-focus-within/message:translate-y-0 transition-all duration-200`}
                         >
                           {renderToolbarButton(
-                            SmilePlus,
+                            Smile,
                             "React",
                             () =>
                               setActiveReactionPicker(
                                 activeReactionPicker === msg._id
                                   ? null
                                   : msg._id
-                              )
+                              ),
+                            activeReactionPicker === msg._id
+                              ? "text-cyan-300 bg-cyan-500/20"
+                              : "text-slate-300"
                           )}
 
                           {!isOwnMessage &&
                             renderToolbarButton(
-                              CornerUpLeft,
+                              Reply,
                               "Reply",
                               () => handleReply(msg)
                             )}
 
-                          {isOwnMessage && msg.text &&
+                          {isOwnMessage &&
+                            msg.text &&
                             renderToolbarButton(
                               Pencil,
                               "Edit",
@@ -424,6 +431,7 @@ function ChatContainer() {
                         </div>
                       )}
 
+                      {/* Message Bubble */}
                       <div
                         className={`chat-bubble relative transition-all duration-300 ${
                           isDeleted
@@ -439,7 +447,9 @@ function ChatContainer() {
                           <div className="min-w-[220px]">
                             <textarea
                               value={editedText}
-                              onChange={(e) => setEditedText(e.target.value)}
+                              onChange={(event) =>
+                                setEditedText(event.target.value)
+                              }
                               maxLength={2000}
                               rows={3}
                               autoFocus
@@ -526,15 +536,13 @@ function ChatContainer() {
                                 key={emoji}
                                 type="button"
                                 onClick={() =>
-                                  !isOwnMessage &&
                                   handleReaction(msg._id, emoji)
                                 }
-                                disabled={isOwnMessage}
                                 className={`flex items-center gap-1 rounded-full px-2 py-1 text-sm border transition-colors ${
                                   myReaction?.emoji === emoji
                                     ? "bg-cyan-500/20 border-cyan-400 text-cyan-300"
                                     : "bg-slate-800 border-slate-700 text-slate-300"
-                                } ${!isOwnMessage ? "hover:border-slate-500" : ""}`}
+                                } hover:border-cyan-400/70`}
                               >
                                 <span>{emoji}</span>
                                 <span>{count}</span>
@@ -554,7 +562,7 @@ function ChatContainer() {
         ) : isMessagesLoading ? (
           <MessagesLoadingSkeleton />
         ) : (
-          <NoChatHistoryPlaceholder name={selectedUser.fullName} />
+          <NoChatHistoryPlaceholder name={selectedUser?.fullName} />
         )}
       </div>
 
