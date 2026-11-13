@@ -999,7 +999,9 @@ function GroupChatContainer() {
                             </div>
                           ) : (
                             <p className="text-xs opacity-80 whitespace-pre-wrap break-words [overflow-wrap:anywhere] min-w-0">
-                              {replyMessage.text || "Message unavailable"}
+                              {replyMessage.audio
+                                ? "🎤 Voice message"
+                                : replyMessage.text || "Message unavailable"}
                             </p>
                           )}
                         </div>
@@ -1022,6 +1024,27 @@ function GroupChatContainer() {
                               alt="Shared image"
                               className="rounded-lg max-h-64 object-cover mb-2"
                             />
+                          )}
+
+                          {/* Voice Message */}
+                          {message.audio?.url && (
+                            <div className="my-2 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-sm">🎤</span>
+                                <span className="text-xs font-medium">
+                                  Voice message
+                                </span>
+                              </div>
+
+                              <audio
+                                controls
+                                preload="metadata"
+                                src={message.audio.url}
+                                className="w-full max-w-[280px] h-10"
+                              >
+                                Your browser does not support audio playback.
+                              </audio>
+                            </div>
                           )}
 
                           {editingMessageId === message._id ? (
@@ -1067,6 +1090,7 @@ function GroupChatContainer() {
                           )}
                         </>
                       )}
+
 
                       <div className="flex items-center justify-end gap-1 mt-1">
                         {message.isEdited && (
