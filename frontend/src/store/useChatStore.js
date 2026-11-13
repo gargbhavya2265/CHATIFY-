@@ -1072,6 +1072,85 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
+
+    forwardMessage: async (messageId, destinations) => {
+        try {
+            const res = await axiosInstance.post("/messages/forward", {
+                messageId,
+                destinations,
+            });
+
+            const forwardedMessages = res.data.forwardedMessages || [];
+
+            const getId = (value) =>
+                (value?._id || value)?.toString();
+
+            const selectedUserId = getId(get().selectedUser);
+            const selectedGroupId = getId(get().selectedGroup);
+
+            const messagesForCurrentChat = forwardedMessages.filter(
+                (message) => {
+                    if (message.messageType === "direct") {
+                        return (
+                            selectedUserId &&
+                            getId(message.receiverId) === selectedUserId
+                        );
+                    }
+
+                    if (message.messageType === "group") {
+                        return (
+                            selectedGroupId &&
+                            getId(message.groupId) === selectedGroupId
+                        );
+                    }
+
+                    return false;
+                }
+            );
+
+            if (messagesForCurrentChat.length > 0) {
+                set((state) => {
+                    const existingIds = new Set(
+                        state.messages.map((message) =>
+                            getId(message)
+                        )
+                    );
+
+                    const newMessages = messagesForCurrentChat.filter(
+                        (message) => !existingIds.has(getId(message))
+                    );
+
+                    return {
+                        messages: [...state.messages, ...newMessages],
+                    };
+                });
+            }
+
+            if (
+                forwardedMessages.some(
+                    (message) => message.messageType === "direct"
+                )
+            ) {
+                await get().getMyChatPartners();
+            }
+
+            toast.success(
+                forwardedMessages.length === 1
+                    ? "Message forwarded"
+                    : `${forwardedMessages.length} messages forwarded`
+            );
+
+            return true;
+        } catch (error) {
+            toast.error(
+                error.response?.data?.message ||
+                "Unable to forward message"
+            );
+
+            return false;
+        }
+    },
+
     deleteMessage: async (messageId) => {
         try {
             const res = await axiosInstance.delete(`/messages/${messageId}`);

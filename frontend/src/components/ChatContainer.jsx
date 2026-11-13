@@ -1,4 +1,3 @@
-
 import { Fragment, useEffect, useRef, useState } from "react";
 
 import {
@@ -10,6 +9,7 @@ import {
   Trash2,
   X,
   Save,
+  Forward,
 } from "lucide-react";
 
 import EmojiPicker from "emoji-picker-react";
@@ -22,6 +22,7 @@ import NoChatHistoryPlaceholder from "./NoChatHistoryPlaceholder";
 import MessageInput from "./MessageInput";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
 import VoiceMessagePlayer from "./VoiceMessagePlayer";
+import ForwardMessageModal from "./ForwardMessageModal";
 
 function ChatContainer() {
   const {
@@ -35,6 +36,11 @@ function ChatContainer() {
     setReplyingTo,
     editMessage,
     deleteMessage,
+    forwardMessage,
+    allContacts,
+    groups,
+    getAllContacts,
+    getMyGroups,
   } = useChatStore();
 
   const { authUser } = useAuthStore();
@@ -46,6 +52,7 @@ function ChatContainer() {
   const [activeReactionPicker, setActiveReactionPicker] = useState(null);
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editedText, setEditedText] = useState("");
+  const [forwardingMessage, setForwardingMessage] = useState(null);
 
   useEffect(() => {
     if (!selectedUser?._id) return;
@@ -105,6 +112,25 @@ function ChatContainer() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [activeReactionPicker]);
+
+  // Load available forwarding destinations when the modal opens.
+  useEffect(() => {
+    if (!forwardingMessage) return;
+
+    if (!allContacts?.length) {
+      getAllContacts();
+    }
+
+    if (!groups?.length) {
+      getMyGroups();
+    }
+  }, [
+    forwardingMessage,
+    allContacts?.length,
+    groups?.length,
+    getAllContacts,
+    getMyGroups,
+  ]);
 
   const getDateKey = (date) => {
     const messageDate = new Date(date);
@@ -203,6 +229,20 @@ function ChatContainer() {
     }
 
     setActiveReactionPicker(null);
+  };
+
+  const handleOpenForwardModal = (message) => {
+    setForwardingMessage(message);
+    setActiveReactionPicker(null);
+  };
+
+  const handleForward = async (destinations) => {
+    if (!forwardingMessage?._id) return false;
+
+    return await forwardMessage(
+      forwardingMessage._id,
+      destinations
+    );
   };
 
   const handleScrollToMessage = (messageId) => {
@@ -334,7 +374,7 @@ function ChatContainer() {
                 ) : null;
 
               const isOwnMessage =
-                msg.senderId?.toString() === authUser?._id?.toString();
+                (msg.senderId?._id || msg.senderId)?.toString() === authUser?._id?.toString();
 
               const isDeleted = msg.isDeleted === true;
               const isEditing = editingMessageId === msg._id;
@@ -387,6 +427,13 @@ function ChatContainer() {
                             activeReactionPicker === msg._id
                               ? "text-cyan-300 bg-cyan-500/20"
                               : "text-slate-300"
+                          )}
+
+                          {renderToolbarButton(
+                            Forward,
+                            "Forward",
+                            () => handleOpenForwardModal(msg),
+                            "text-cyan-300 hover:text-cyan-200"
                           )}
 
                           {!isOwnMessage &&
@@ -442,6 +489,13 @@ function ChatContainer() {
                               : "bg-slate-800 text-slate-200"
                         }`}
                       >
+                        {msg.forwardedFrom && !isDeleted && (
+  <div className="mb-2 flex items-center gap-1.5 text-xs italic opacity-80">
+    <Forward size={13} />
+    <span>Forwarded</span>
+  </div>
+)}
+
                         {msg.replyTo && renderReplyPreview(msg.replyTo)}
 
                         {isEditing ? (
@@ -576,6 +630,16 @@ function ChatContainer() {
       </div>
 
       <MessageInput />
+
+      {forwardingMessage && (
+        <ForwardMessageModal
+          message={forwardingMessage}
+          contacts={allContacts || []}
+          groups={groups || []}
+          onClose={() => setForwardingMessage(null)}
+          onForward={handleForward}
+        />
+      )}
     </>
   );
 }

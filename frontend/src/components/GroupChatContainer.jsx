@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Info,
   Camera,
+  Forward,
 } from "lucide-react";
 import EmojiPicker from "emoji-picker-react";
 
@@ -22,6 +23,7 @@ import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import GroupMessageInput from "./GroupMessageInput";
 import VoiceMessagePlayer from "./VoiceMessagePlayer";
+import ForwardMessageModal from "./ForwardMessageModal";
 
 function GroupChatContainer() {
   const {
@@ -36,10 +38,13 @@ function GroupChatContainer() {
     setReplyingTo,
     editMessage,
     deleteMessage,
+    forwardMessage,
     updateMemberRole,
     updateGroupDetails,
     allContacts,
     getAllContacts,
+    groups,
+    getMyGroups,
     addGroupMembers,
     removeGroupMember,
     leaveGroup,
@@ -55,6 +60,7 @@ function GroupChatContainer() {
   const [showGroupPicPreview, setShowGroupPicPreview] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [showLeaveConfirmation, setShowLeaveConfirmation] = useState(false);
+  const [forwardingMessage, setForwardingMessage] = useState(null);
 
   const [groupName, setGroupName] = useState(selectedGroup?.name || "");
   const [groupDescription, setGroupDescription] = useState(
@@ -201,6 +207,25 @@ function GroupChatContainer() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
+
+  // Load forwarding destinations when the forwarding modal opens.
+  useEffect(() => {
+    if (!forwardingMessage) return;
+
+    if (!allContacts?.length) {
+      getAllContacts();
+    }
+
+    if (!groups?.length) {
+      getMyGroups();
+    }
+  }, [
+    forwardingMessage,
+    allContacts?.length,
+    groups?.length,
+    getAllContacts,
+    getMyGroups,
+  ]);
 
   if (!selectedGroup) return null;
 
@@ -438,6 +463,28 @@ function GroupChatContainer() {
     setEditingMessageId(message._id);
     setEditedText(message.text || "");
     setShowReactionPicker(null);
+  };
+
+  const handleOpenForwardModal = (message) => {
+    if (message.isDeleted) return;
+
+    setShowReactionPicker(null);
+    setForwardingMessage(message);
+  };
+
+  const handleForward = async (destinations) => {
+    if (!forwardingMessage?._id) return false;
+
+    const success = await forwardMessage(
+      forwardingMessage._id,
+      destinations
+    );
+
+    if (success) {
+      setForwardingMessage(null);
+    }
+
+    return success;
   };
 
   const handleRoleChange = async (memberId, role) => {
@@ -827,8 +874,11 @@ function GroupChatContainer() {
 
             const canReact = !isFormerMember && !deleted;
 
+            // Former members can forward messages from their archived group.
+            const canForward = !deleted && !editingMessageId;
+
             const showToolbar =
-              canReply || canEdit || canDelete || canReact;
+              canReply || canEdit || canDelete || canReact || canForward;
 
             return (
               <Fragment key={message._id}>
@@ -962,6 +1012,19 @@ function GroupChatContainer() {
                             </button>
                           )}
 
+                          {/* Forward */}
+                          {canForward && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenForwardModal(message)}
+                              title="Forward"
+                              aria-label="Forward message"
+                              className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-300 hover:bg-slate-700 hover:text-cyan-300 transition-colors"
+                            >
+                              <Forward className="w-4 h-4" />
+                            </button>
+                          )}
+
                           {/* Delete */}
                           {canDelete && (
                             <button
@@ -976,6 +1039,14 @@ function GroupChatContainer() {
                           )}
                         </div>
                       )}
+
+                      {/* Forwarded Attribution */}
+                      {message.forwardedFrom && !deleted && (
+  <div className="mb-2 flex items-center gap-1.5 text-xs italic opacity-80">
+    <Forward className="w-3.5 h-3.5 shrink-0" />
+    <span>Forwarded</span>
+  </div>
+)}
 
                       {/* Reply Preview */}
                       {replyMessage && (
@@ -1081,7 +1152,6 @@ function GroupChatContainer() {
                         </>
                       )}
 
-
                       <div className="flex items-center justify-end gap-1 mt-1">
                         {message.isEdited && (
                           <span className="text-[10px] opacity-60">
@@ -1134,6 +1204,17 @@ function GroupChatContainer() {
             You left this group or were removed. Sending messages is disabled.
           </p>
         </div>
+      )}
+
+      {/* Forward Message Modal */}
+      {forwardingMessage && (
+        <ForwardMessageModal
+          message={forwardingMessage}
+          contacts={allContacts || []}
+          groups={groups || []}
+          onClose={() => setForwardingMessage(null)}
+          onForward={handleForward}
+        />
       )}
 
       {/* GROUP INFO MODAL */}
