@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+﻿import mongoose from "mongoose";
 import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
 import Message from "../models/message.js";
@@ -958,7 +958,154 @@ export const deleteMessage = async (req, res) => {
     }
 };
 
-export const searchMessages = async (req, res) => {
+export const pinMessage = async (req, res) => {
+    try {
+        const { id: messageId } = req.params;
+        const userId = req.user._id;
+        const { isPinned } = req.body;
+        if (!mongoose.Types.ObjectId.isValid(messageId)) {
+            return res.status(400).json({
+                message: "Invalid message ID.",
+            });
+        }
+        if (typeof isPinned !== "boolean") {
+            return res.status(400).json({
+                message: "isPinned must be a boolean.",
+            });
+        }
+        const message = await Message.findById(messageId);
+        if (!message) {
+            return res.status(404).json({
+                message: "Message not found.",
+            });
+        }
+        if (message.isDeleted) {
+            return res.status(400).json({
+                message: "Deleted messages cannot be pinned.",
+            });
+        }
+        if (message.messageType === "group") {
+            const group = await Group.findOne({
+                _id: message.groupId,
+                "members.userId": userId,
+            });
+            if (!group) {
+                return res.status(403).json({
+                    message: "You are not an active member of this group.",
+                });
+            }
+
+        } else {
+            const isParticipant =
+                message.senderId.toString() === userId.toString() ||
+                message.receiverId.toString() === userId.toString();
+            if (!isParticipant) {
+                return res.status(403).json({
+                    message: "You are not a participant in this conversation.",
+                });
+            }
+        }
+        if (message.isPinned === isPinned) {
+            return res.status(200).json({
+                message: isPinned
+                    ? "Message is already pinned."
+                    : "Message is already unpinned.",
+                updatedMessage: message,
+            });
+        }
+        message.isPinned = isPinned;
+        message.pinnedAt = isPinned ? new Date() : null;
+        message.pinnedBy = isPinned ? userId : null;
+        await message.save();
+        await message.populate("pinnedBy", "fullName");
+        const update = {
+            message: message.toObject(),
+        };
+        emitMessageUpdate(
+            message,
+            isPinned ? "messagePinned" : "messageUnpinned",
+            update
+        );
+        return res.status(200).json({
+            message: isPinned
+                ? "Message pinned successfully."
+                : "Message unpinned successfully.",
+            updatedMessage: message,
+        });
+    } catch (error) {
+        console.error("Error in pinMessage:", error.message);
+        return res.status(500).json({
+            message: "Internal server error.",
+        });
+    }
+};
+export const getPinnedMessages = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const { groupId, userId: otherUserId } = req.query;
+        let query = {
+            isPinned: true,
+            isDeleted: false,
+            hiddenFor: { $ne: userId },
+        };
+        if (groupId) {
+            if (!mongoose.Types.ObjectId.isValid(groupId)) {
+                return res.status(400).json({
+                    message: "Invalid group ID.",
+                });
+            }
+            const isMember = await Group.exists({
+                _id: groupId,
+                "members.userId": userId,
+            });
+            if (!isMember) {
+                return res.status(403).json({
+                    message: "You are not an active member of this group.",
+                });
+            }
+            query.messageType = "group";
+            query.groupId = groupId;
+        } else if (otherUserId) {
+            if (
+                !mongoose.Types.ObjectId.isValid(otherUserId) ||
+                otherUserId.toString() === userId.toString()
+            ) {
+                return res.status(400).json({
+                    message: "Invalid conversation user ID.",
+                });
+            }
+            const otherUserExists = await User.exists({
+                _id: otherUserId,
+            });
+            if (!otherUserExists) {
+                return res.status(404).json({
+                    message: "User not found.",
+                });
+            }
+            query.messageType = "direct";
+            query.$or = [
+                { senderId: userId, receiverId: otherUserId },
+                { senderId: otherUserId, receiverId: userId },
+            ];
+        } else {
+            return res.status(400).json({
+                message: "Provide either groupId or userId.",
+            });
+        }
+        const pinnedMessages = await Message.find(query)
+            .populate("senderId", "fullName profilePic")
+            .populate("pinnedBy", "fullName")
+            .sort({ pinnedAt: -1 });
+        return res.status(200).json({
+            pinnedMessages,
+        });
+    } catch (error) {
+        console.error("Error in getPinnedMessages:", error.message);
+        return res.status(500).json({
+            message: "Internal server error.",
+        });
+    }
+};export const searchMessages = async (req, res) => {
     try {
         const userId = req.user._id;
 
@@ -1903,3 +2050,5 @@ export const forwardMessage = async (req, res) => {
         });
     }
 };
+
+

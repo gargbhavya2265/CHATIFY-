@@ -1,4 +1,4 @@
-
+﻿
 import { Fragment, useEffect, useRef, useState } from "react";
 import {
   XIcon,
@@ -16,6 +16,8 @@ import {
   Info,
   Camera,
   Forward,
+  Pin,
+  PinOff,
 } from "lucide-react";
 import EmojiPicker from "emoji-picker-react";
 
@@ -32,6 +34,7 @@ function GroupChatContainer() {
     messages,
     isMessagesLoading,
     getGroupMessages,
+    getPinnedMessages,
     subscribeToGroupMessages,
     unsubscribeFromGroupMessages,
     toggleReaction,
@@ -48,6 +51,8 @@ function GroupChatContainer() {
     addGroupMembers,
     removeGroupMember,
     leaveGroup,
+    pinnedMessages,
+    pinMessage,
     openUserProfile,
     viewingProfile,
   } = useChatStore();
@@ -58,6 +63,7 @@ function GroupChatContainer() {
   const [showMembers, setShowMembers] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [showGroupPicPreview, setShowGroupPicPreview] = useState(false);
+  const [showPinnedMessages, setShowPinnedMessages] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [showLeaveConfirmation, setShowLeaveConfirmation] = useState(false);
   const [forwardingMessage, setForwardingMessage] = useState(null);
@@ -106,6 +112,7 @@ function GroupChatContainer() {
     isNearBottomRef.current = true;
 
     getGroupMessages(groupId);
+    getPinnedMessages();
     subscribeToGroupMessages();
 
     return () => {
@@ -114,6 +121,7 @@ function GroupChatContainer() {
   }, [
     groupId,
     getGroupMessages,
+    getPinnedMessages,
     subscribeToGroupMessages,
     unsubscribeFromGroupMessages,
   ]);
@@ -316,8 +324,27 @@ function GroupChatContainer() {
     openUserProfile(id);
   };
 
+  // SCROLL TO A PINNED GROUP MESSAGE
+  const handleScrollToGroupMessage = (messageId) => {
+    setShowPinnedMessages(false);
+    const element = document.getElementById(
+      `group-message-${messageId}`
+    );
+    if (!element) return;
+    element.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+    element.classList.add("ring-2", "ring-cyan-400", "rounded-xl");
+    setTimeout(() => {
+      element.classList.remove(
+        "ring-2",
+        "ring-cyan-400",
+        "rounded-xl"
+      );
+    }, 1800);
+  };
   // GROUP INFO HANDLERS
-
   const handleOpenGroupInfo = () => {
     setGroupName(selectedGroup.name || "");
     setGroupDescription(selectedGroup.description || "");
@@ -736,10 +763,20 @@ function GroupChatContainer() {
                 <Info className="w-3.5 h-3.5" />
                 Group Info
               </button>
+              {pinnedMessages?.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowPinnedMessages((value) => !value)}
+                  className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1"
+                  title="View pinned messages"
+                >
+                  <Pin className="w-3.5 h-3.5" />
+                  Pinned ({pinnedMessages.length})
+                </button>
+              )}
             </div>
           </div>
         </div>
-
         <button
           onClick={() => setSelectedGroup(null)}
           className="p-2 shrink-0"
@@ -749,13 +786,57 @@ function GroupChatContainer() {
         </button>
       </div>
 
-      {/* Archived Group Banner */}
-      {isFormerMember && (
+      {/* Pinned Messages Panel */}
+      {showPinnedMessages && pinnedMessages?.length > 0 && (
+        <div className="max-h-64 overflow-y-auto border-b border-slate-700 bg-slate-900/95 shrink-0">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/70">
+            <p className="text-sm font-semibold text-slate-200">
+              Pinned Messages
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowPinnedMessages(false)}
+              className="p-1 text-slate-400 hover:text-white"
+              title="Close pinned messages"
+            >
+              <XIcon className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="p-2 space-y-1">
+            {pinnedMessages.map((pinnedMessage) => (
+              <button
+                key={pinnedMessage._id}
+                type="button"
+                onClick={() => handleScrollToGroupMessage(pinnedMessage._id)}
+                className="w-full text-left p-3 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Pin className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span className="text-xs font-medium text-cyan-300 truncate">
+                    {pinnedMessage.senderId?.fullName || "Group member"}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-300 truncate">
+                  {pinnedMessage.text ||
+                    (pinnedMessage.image
+                      ? "Photo"
+                      : pinnedMessage.audio
+                        ? "Voice message"
+                        : pinnedMessage.video
+                          ? "Video"
+                          : "Message")}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Archived Group Banner */}      {isFormerMember && (
         <div className="flex items-center gap-3 px-5 py-3 bg-amber-500/10 border-b border-amber-500/20 shrink-0">
-          <span className="text-xl">📦</span>
+          <span className="text-xl">ðŸ“¦</span>
           <div>
             <p className="text-sm font-medium text-amber-300">
-              Archived Group · Read-only
+              Archived Group Â· Read-only
             </p>
             <p className="text-xs text-slate-400">
               You can view previous messages but cannot send new messages or
@@ -874,11 +955,13 @@ function GroupChatContainer() {
 
             const canReact = !isFormerMember && !deleted;
 
-            // Former members can forward messages from their archived group.
+            const canPin =
+              !isFormerMember &&
+              !deleted;
             const canForward = !deleted && !editingMessageId;
 
             const showToolbar =
-              canReply || canEdit || canDelete || canReact || canForward;
+              canReply || canEdit || canDelete || canReact || canForward || canPin;
 
             return (
               <Fragment key={message._id}>
@@ -1024,9 +1107,23 @@ function GroupChatContainer() {
                               <Forward className="w-4 h-4" />
                             </button>
                           )}
-
-                          {/* Delete */}
-                          {canDelete && (
+{/* Pin / Unpin - admins and moderators */}
+{canPin && (
+  <button
+    type="button"
+    onClick={() => pinMessage(message._id, !message.isPinned)}
+    title={message.isPinned ? "Unpin" : "Pin"}
+    aria-label={message.isPinned ? "Unpin message" : "Pin message"}
+    className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-300 hover:bg-slate-700 hover:text-cyan-300 transition-colors"
+  >
+    {message.isPinned ? (
+      <PinOff className="w-4 h-4" />
+    ) : (
+      <Pin className="w-4 h-4" />
+    )}
+  </button>
+)}
+{/* Delete */}                          {canDelete && (
                             <button
                               type="button"
                               onClick={() => handleDelete(message._id)}
@@ -1072,7 +1169,7 @@ function GroupChatContainer() {
                           ) : (
                             <p className="text-xs opacity-80 whitespace-pre-wrap break-words [overflow-wrap:anywhere] min-w-0">
                               {replyMessage.audio
-                                ? "🎤 Voice message"
+                                ? "ðŸŽ¤ Voice message"
                                 : replyMessage.text || "Message unavailable"}
                             </p>
                           )}
@@ -1345,7 +1442,7 @@ function GroupChatContainer() {
 
                 {isCurrentUserAdmin && (
                   <p className="text-xs text-slate-500 mt-1">
-                    {groupName.length}/50 characters · Minimum 3
+                    {groupName.length}/50 characters Â· Minimum 3
                   </p>
                 )}
               </div>
@@ -1800,3 +1897,13 @@ function GroupChatContainer() {
 }
 
 export default GroupChatContainer;
+
+
+
+
+
+
+
+
+
+

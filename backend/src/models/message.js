@@ -1,4 +1,4 @@
-
+﻿
 import mongoose from "mongoose";
 
 const reactionSchema = new mongoose.Schema(
@@ -150,6 +150,19 @@ const messageSchema = new mongoose.Schema(
         isDeleted: {
             type: Boolean,
             default: false,
+        },
+        isPinned: {
+            type: Boolean,
+            default: false,
+        },
+        pinnedAt: {
+            type: Date,
+            default: null,
+        },
+        pinnedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
         },
         deletedAt: {
             type: Date,

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+﻿import { Fragment, useEffect, useRef, useState } from "react";
 
 import {
   Check,
@@ -10,6 +10,8 @@ import {
   X,
   Save,
   Forward,
+  Pin,
+  PinOff,
 } from "lucide-react";
 
 import EmojiPicker from "emoji-picker-react";
@@ -36,6 +38,8 @@ function ChatContainer() {
     setReplyingTo,
     editMessage,
     deleteMessage,
+    pinMessage,
+    getPinnedMessages,
     forwardMessage,
     allContacts,
     groups,
@@ -60,12 +64,14 @@ function ChatContainer() {
     hasScrolledToInitialPosition.current = false;
 
     getMessagesByUserId(selectedUser._id);
+    getPinnedMessages();
     subscribeToMessages();
 
     return () => unsubscribeFromMessages();
   }, [
     selectedUser,
     getMessagesByUserId,
+    getPinnedMessages,
     subscribeToMessages,
     unsubscribeFromMessages,
   ]);
@@ -340,7 +346,7 @@ function ChatContainer() {
 
   return (
     <>
-      <ChatHeader />
+      <ChatHeader onScrollToMessage={handleScrollToMessage} />
 
       <div className="flex-1 px-6 overflow-y-auto py-8">
         {messages.length > 0 && !isMessagesLoading ? (
@@ -416,7 +422,13 @@ function ChatContainer() {
                           } flex items-center gap-1 p-1.5 rounded-xl border border-slate-600/70 bg-slate-900/95 backdrop-blur-xl shadow-xl opacity-100 md:opacity-0 md:translate-y-1 md:group-hover/message:opacity-100 md:group-hover/message:translate-y-0 md:group-focus-within/message:opacity-100 md:group-focus-within/message:translate-y-0 transition-all duration-200`}
                         >
                           {renderToolbarButton(
-                            Smile,
+                          msg.isPinned ? PinOff : Pin,
+                          msg.isPinned ? "Unpin" : "Pin",
+                          () => pinMessage(msg._id, !msg.isPinned),
+                          "text-cyan-300 hover:text-cyan-200"
+                        )}
+                        {renderToolbarButton(
+                          Smile,
                             "React",
                             () =>
                               setActiveReactionPicker(
@@ -431,6 +443,7 @@ function ChatContainer() {
 
                           {renderToolbarButton(
                             Forward,
+  
                             "Forward",
                             () => handleOpenForwardModal(msg),
                             "text-cyan-300 hover:text-cyan-200"
@@ -645,3 +658,5 @@ function ChatContainer() {
 }
 
 export default ChatContainer;
+
+

@@ -1,4 +1,4 @@
-import { create } from "zustand";
+﻿import { create } from "zustand";
 import { axiosInstance } from "../lib/axios";
 import toast from "react-hot-toast";
 import { useAuthStore } from "./useAuthStore";
@@ -49,6 +49,7 @@ export const useChatStore = create((set, get) => ({
     allContacts: [],
     chats: [],
     messages: [],
+    pinnedMessages: [],
 
     searchResults: [],
     isSearching: false,
@@ -143,6 +144,7 @@ export const useChatStore = create((set, get) => ({
             isTyping: false,
             replyingTo: null,
             messages: [],
+            pinnedMessages: [],
         });
     },
 
@@ -172,6 +174,7 @@ export const useChatStore = create((set, get) => ({
             isTyping: false,
             replyingTo: null,
             messages: [],
+            pinnedMessages: [],
         });
     },
 
@@ -1175,7 +1178,81 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
-    subscribeToMessages: () => {
+    getPinnedMessages: async () => {
+        const { selectedUser, selectedGroup } = get();
+        if (!selectedUser && !selectedGroup) {
+            set({ pinnedMessages: [] });
+            return;
+        }
+        const conversationKey = selectedGroup
+            ? `group:${selectedGroup._id}`
+            : `direct:${selectedUser._id}`;
+        const params = selectedGroup
+            ? { groupId: selectedGroup._id }
+            : { userId: selectedUser._id };
+        try {
+            const res = await axiosInstance.get("/messages/pinned", {
+                params,
+            });
+            const current = get();
+            const currentKey = current.selectedGroup
+                ? `group:${current.selectedGroup._id}`
+                : current.selectedUser
+                    ? `direct:${current.selectedUser._id}`
+                    : null;
+            if (currentKey !== conversationKey) return;
+            set({
+                pinnedMessages: res.data.pinnedMessages || [],
+            });
+        } catch (error) {
+            toast.error(
+                error.response?.data?.message ||
+                "Unable to fetch pinned messages"
+            );
+        }
+    },
+    pinMessage: async (messageId, isPinned) => {
+        try {
+            const res = await axiosInstance.patch(
+                `/messages/${messageId}/pin`,
+                { isPinned }
+            );
+            const updatedMessage = res.data.updatedMessage;
+            set((state) => {
+                const messageIdString = updatedMessage._id.toString();
+                const messages = state.messages.map((message) =>
+                    message._id?.toString() === messageIdString
+                        ? updatedMessage
+                        : message
+                );
+                const pinnedMessages = isPinned
+                    ? [
+                        updatedMessage,
+                        ...state.pinnedMessages.filter(
+                            (message) =>
+                                message._id?.toString() !== messageIdString
+                        ),
+                    ]
+                    : state.pinnedMessages.filter(
+                        (message) =>
+                            message._id?.toString() !== messageIdString
+                    );
+                return { messages, pinnedMessages };
+            });
+            toast.success(
+                isPinned
+                    ? "Message pinned successfully"
+                    : "Message unpinned successfully"
+            );
+            return true;
+        } catch (error) {
+            toast.error(
+                error.response?.data?.message ||
+                "Unable to update pinned message"
+            );
+            return false;
+        }
+    },    subscribeToMessages: () => {
         const { selectedUser, isSoundEnabled } = get();
 
         if (!selectedUser) return;
@@ -1327,6 +1404,44 @@ export const useChatStore = create((set, get) => ({
             }));
         };
 
+        const handlePinnedMessageUpdate = ({ message: updatedMessage } = {}) => {
+            if (!updatedMessage?._id) return;
+            const senderId = (
+                updatedMessage.senderId?._id || updatedMessage.senderId
+            )?.toString();
+            const receiverId = (
+                updatedMessage.receiverId?._id || updatedMessage.receiverId
+            )?.toString();
+            const currentUserId = useAuthStore.getState().authUser?._id?.toString();
+            if (
+                !currentUserId ||
+                ![senderId, receiverId].includes(currentUserId) ||
+                ![senderId, receiverId].includes(selectedUserId)
+            ) {
+                return;
+            }
+            set((state) => {
+                const messageId = updatedMessage._id.toString();
+                return {
+                    messages: state.messages.map((message) =>
+                        message._id?.toString() === messageId
+                            ? updatedMessage
+                            : message
+                    ),
+                    pinnedMessages: updatedMessage.isPinned && !updatedMessage.isDeleted
+                        ? [
+                            updatedMessage,
+                            ...state.pinnedMessages.filter(
+                                (message) => message._id?.toString() !== messageId
+                            ),
+                        ]
+                        : state.pinnedMessages.filter(
+                            (message) => message._id?.toString() !== messageId
+                        ),
+                };
+            });
+        };
+
         socket.on("newMessage", handleNewMessage);
         socket.on("userTyping", handleUserTyping);
         socket.on("userStoppedTyping", handleUserStoppedTyping);
@@ -1335,6 +1450,8 @@ export const useChatStore = create((set, get) => ({
         socket.on("messageReactionUpdated", handleMessageReactionUpdated);
         socket.on("messageUpdated", handleMessageUpdated);
         socket.on("messageDeleted", handleMessageDeleted);
+        socket.on("messagePinned", handlePinnedMessageUpdate);
+        socket.on("messageUnpinned", handlePinnedMessageUpdate);
 
         set({
             socketListeners: {
@@ -1346,6 +1463,7 @@ export const useChatStore = create((set, get) => ({
                 handleMessageReactionUpdated,
                 handleMessageUpdated,
                 handleMessageDeleted,
+                handlePinnedMessageUpdate,
             },
         });
     },
@@ -1368,6 +1486,8 @@ export const useChatStore = create((set, get) => ({
 
             socket.off("messageUpdated", listeners.handleMessageUpdated);
             socket.off("messageDeleted", listeners.handleMessageDeleted);
+            socket.off("messagePinned", listeners.handlePinnedMessageUpdate);
+            socket.off("messageUnpinned", listeners.handlePinnedMessageUpdate);
         }
 
         set({
@@ -1434,20 +1554,30 @@ export const useChatStore = create((set, get) => ({
 
         const updateGroupMessage = ({ message: updatedMessage } = {}) => {
             if (!updatedMessage?._id) return;
-
             const messageGroupId = (
                 updatedMessage.groupId?._id || updatedMessage.groupId
             )?.toString();
-
             if (messageGroupId !== groupId) return;
-
-            set((state) => ({
-                messages: state.messages.map((message) =>
-                    message._id?.toString() === updatedMessage._id.toString()
-                        ? updatedMessage
-                        : message
-                ),
-            }));
+            set((state) => {
+                const messageId = updatedMessage._id.toString();
+                return {
+                    messages: state.messages.map((message) =>
+                        message._id?.toString() === messageId
+                            ? updatedMessage
+                            : message
+                    ),
+                    pinnedMessages: updatedMessage.isPinned && !updatedMessage.isDeleted
+                        ? [
+                            updatedMessage,
+                            ...state.pinnedMessages.filter(
+                                (message) => message._id?.toString() !== messageId
+                            ),
+                        ]
+                        : state.pinnedMessages.filter(
+                            (message) => message._id?.toString() !== messageId
+                        ),
+                };
+            });
         };
 
         const handleGroupMessagesRead = ({
@@ -1514,6 +1644,8 @@ export const useChatStore = create((set, get) => ({
         socket.on("messageUpdated", updateGroupMessage);
         socket.on("messageDeleted", updateGroupMessage);
         socket.on("messageReactionUpdated", updateGroupMessage);
+        socket.on("messagePinned", updateGroupMessage);
+        socket.on("messageUnpinned", updateGroupMessage);
         socket.on("groupUpdated", handleGroupUpdated);
         socket.on("groupMessagesRead", handleGroupMessagesRead);
 
@@ -1552,6 +1684,10 @@ export const useChatStore = create((set, get) => ({
                 listeners.updateGroupMessage
             );
 
+            
+            socket.off("messagePinned", listeners.updateGroupMessage);
+            socket.off("messageUnpinned", listeners.updateGroupMessage);
+
             socket.off(
                 "groupUpdated",
                 listeners.handleGroupUpdated
@@ -1568,3 +1704,8 @@ export const useChatStore = create((set, get) => ({
         });
     },
 }));
+
+
+
+
+
