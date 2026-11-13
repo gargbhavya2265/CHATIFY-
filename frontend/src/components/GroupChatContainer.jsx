@@ -21,6 +21,7 @@ import EmojiPicker from "emoji-picker-react";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import GroupMessageInput from "./GroupMessageInput";
+import VoiceMessagePlayer from "./VoiceMessagePlayer";
 
 function GroupChatContainer() {
   const {
@@ -1028,22 +1029,11 @@ function GroupChatContainer() {
 
                           {/* Voice Message */}
                           {message.audio?.url && (
-                            <div className="my-2 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-sm">🎤</span>
-                                <span className="text-xs font-medium">
-                                  Voice message
-                                </span>
-                              </div>
-
-                              <audio
-                                controls
-                                preload="metadata"
+                            <div className="my-1 w-[280px] min-w-0 max-w-full">
+                              <VoiceMessagePlayer
                                 src={message.audio.url}
-                                className="w-full max-w-[280px] h-10"
-                              >
-                                Your browser does not support audio playback.
-                              </audio>
+                                isOwnMessage={own}
+                              />
                             </div>
                           )}
 

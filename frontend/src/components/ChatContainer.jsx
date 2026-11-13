@@ -21,6 +21,7 @@ import ChatHeader from "./ChatHeader";
 import NoChatHistoryPlaceholder from "./NoChatHistoryPlaceholder";
 import MessageInput from "./MessageInput";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
+import VoiceMessagePlayer from "./VoiceMessagePlayer";
 
 function ChatContainer() {
   const {
@@ -119,7 +120,6 @@ function ChatContainer() {
 
   const getDateLabel = (date) => {
     const messageDate = new Date(date);
-
     const today = new Date();
 
     const yesterday = new Date();
@@ -186,7 +186,6 @@ function ChatContainer() {
     if (!trimmedText || trimmedText.length > 2000) return;
 
     await editMessage(messageId, trimmedText);
-
     handleEditCancel();
   };
 
@@ -272,10 +271,9 @@ function ChatContainer() {
             )}
 
             {replyTo.audio && (
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-sm">🎤</span>
-                <span className="text-xs opacity-80">Voice message</span>
-              </div>
+              <p className="text-xs opacity-80 mt-1">
+                Voice message
+              </p>
             )}
           </>
         )}
@@ -340,7 +338,6 @@ function ChatContainer() {
 
               const isDeleted = msg.isDeleted === true;
               const isEditing = editingMessageId === msg._id;
-
               const reactions = msg.reactions || [];
 
               const groupedReactions = reactions.reduce(
@@ -372,7 +369,6 @@ function ChatContainer() {
                     }`}
                   >
                     <div className="relative w-fit max-w-[85%] group/message">
-                      {/* Floating Message Toolbar */}
                       {showToolbar && (
                         <div
                           className={`absolute z-40 top-full mt-2 ${
@@ -418,7 +414,6 @@ function ChatContainer() {
                         </div>
                       )}
 
-                      {/* Reaction Picker */}
                       {activeReactionPicker === msg._id && (
                         <div
                           ref={reactionPickerRef}
@@ -438,7 +433,6 @@ function ChatContainer() {
                         </div>
                       )}
 
-                      {/* Message Bubble */}
                       <div
                         className={`chat-bubble relative w-fit max-w-full transition-all duration-300 ${
                           isDeleted
@@ -508,22 +502,11 @@ function ChatContainer() {
                             )}
 
                             {msg.audio?.url && (
-                              <div className="my-2 min-w-[220px] max-w-full">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-sm">🎤</span>
-                                  <span className="text-xs font-medium">
-                                    Voice message
-                                  </span>
-                                </div>
-
-                                <audio
-                                  controls
-                                  preload="metadata"
+                              <div className="my-1 w-[280px] min-w-[220px] max-w-full">
+                                <VoiceMessagePlayer
                                   src={msg.audio.url}
-                                  className="w-full max-w-[280px] h-10"
-                                >
-                                  Your browser does not support audio playback.
-                                </audio>
+                                  isOwnMessage={isOwnMessage}
+                                />
                               </div>
                             )}
 
@@ -554,7 +537,6 @@ function ChatContainer() {
                         </p>
                       </div>
 
-                      {/* Reactions */}
                       {Object.entries(groupedReactions).length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
                           {Object.entries(groupedReactions).map(

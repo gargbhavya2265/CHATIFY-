@@ -5,6 +5,7 @@ import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import toast from "react-hot-toast";
 import EmojiPicker from "emoji-picker-react";
+import fixWebmDuration from "fix-webm-duration";
 import {
   ImageIcon,
   SendIcon,
@@ -307,7 +308,9 @@ function MessageInput() {
         }
       };
 
-      recorder.onerror = () => {
+      recorder.onerror = (event) => {
+        console.error("MediaRecorder error:", event.error);
+
         toast.error("Recording failed. Please try again.");
         cancelRecordingRef.current = true;
 
@@ -317,18 +320,32 @@ function MessageInput() {
       };
 
       recorder.onstop = async () => {
-        const duration = Math.min(
-          300,
+        const elapsedMs = Math.min(
+          300000,
           Math.max(
             0,
-            Math.round(
-              (Date.now() - recordingStartTimeRef.current) / 1000
-            )
+            Date.now() - (recordingStartTimeRef.current || Date.now())
           )
         );
 
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: recorder.mimeType || "audio/webm",
+        const duration = Math.round(elapsedMs / 1000);
+
+        const recordedChunks = [...audioChunksRef.current];
+
+        const audioMimeType = recorder.mimeType || "audio/webm";
+
+        const rawAudioBlob = new Blob(recordedChunks, {
+          type: audioMimeType,
+        });
+
+        console.log("VOICE RECORDING DEBUG:", {
+          recorderMimeType: recorder.mimeType,
+          audioMimeType,
+          elapsedMs,
+          durationSeconds: duration,
+          chunks: recordedChunks.length,
+          blobSize: rawAudioBlob.size,
+          blobType: rawAudioBlob.type,
         });
 
         const shouldSend = !cancelRecordingRef.current;
@@ -337,14 +354,17 @@ function MessageInput() {
         setIsRecording(false);
         setRecordingDuration(0);
 
-        if (!shouldSend) return;
+        if (!shouldSend) {
+          console.log("Voice recording cancelled.");
+          return;
+        }
 
-        if (!audioBlob.size) {
+        if (!rawAudioBlob.size) {
           toast.error("No audio recorded");
           return;
         }
 
-        if (audioBlob.size > 10 * 1024 * 1024) {
+        if (rawAudioBlob.size > 10 * 1024 * 1024) {
           toast.error("Voice message exceeds the 10 MB limit");
           return;
         }
@@ -354,7 +374,47 @@ function MessageInput() {
           return;
         }
 
+        let audioBlob = rawAudioBlob;
+
+        // Fix missing duration metadata in WebM recordings.
+        if (audioMimeType.toLowerCase().includes("webm")) {
+          try {
+            audioBlob = await fixWebmDuration(
+              rawAudioBlob,
+              elapsedMs,
+              { logger: false }
+            );
+
+            console.log("WebM duration metadata fixed:", {
+              originalSize: rawAudioBlob.size,
+              fixedSize: audioBlob.size,
+              durationMs: elapsedMs,
+              mimeType: audioBlob.type,
+            });
+          } catch (error) {
+            console.error("WebM duration fix failed:", error);
+            toast.error("Unable to process voice recording. Please try again.");
+            return;
+          }
+        } else {
+          console.log(
+            "WebM duration fix skipped. Recording format:",
+            audioMimeType
+          );
+        }
+
+        if (!audioBlob.size) {
+          toast.error("Unable to process voice recording");
+          return;
+        }
+
         stopTyping();
+
+        console.log("Sending voice message:", {
+          size: audioBlob.size,
+          type: audioBlob.type,
+          duration,
+        });
 
         await sendVoiceMessage(audioBlob, duration);
       };
@@ -387,6 +447,7 @@ function MessageInput() {
       } else if (error.name === "NotFoundError") {
         toast.error("No microphone found on your device");
       } else {
+        console.error("Recording start error:", error);
         toast.error("Unable to start voice recording");
       }
     }
@@ -443,7 +504,7 @@ function MessageInput() {
         : "Message");
 
   return (
-    <div className="p-4 border-t border-slate-700/50">
+    <div className="p-3 sm:p-4 border-t border-slate-700/50">
       {replyingTo && (
         <div className="max-w-3xl mx-auto mb-3">
           <div className="flex items-center gap-3 bg-slate-800/70 border-l-4 border-cyan-500 rounded-lg p-3">
@@ -501,7 +562,7 @@ function MessageInput() {
 
       <form
         onSubmit={handleSendMessage}
-        className="max-w-3xl mx-auto flex gap-2 sm:gap-4"
+        className="max-w-3xl mx-auto flex items-center gap-2 sm:gap-3"
       >
         <div className="relative flex-1 min-w-0">
           {showEmojiPicker && (
@@ -520,22 +581,40 @@ function MessageInput() {
           )}
 
           {isRecording ? (
-            <div className="w-full flex items-center gap-3 bg-slate-800/70 border border-red-500/40 rounded-lg py-2 px-4">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
-              </span>
+            <div className="w-full min-h-[48px] flex items-center gap-3 bg-slate-800/80 border border-red-500/30 rounded-xl px-3 sm:px-4 py-2">
+              <div className="relative flex items-center justify-center shrink-0">
+                <span className="absolute w-3 h-3 rounded-full bg-red-500/30 animate-ping" />
+                <span className="relative w-2.5 h-2.5 rounded-full bg-red-500" />
+              </div>
 
-              <span className="text-red-400 text-sm font-medium">
-                Recording
-              </span>
+              <div className="flex flex-col min-w-0">
+                <span className="text-red-400 text-xs font-semibold tracking-wide">
+                  RECORDING
+                </span>
 
-              <span className="text-white font-mono text-sm tabular-nums">
-                {formatRecordingTime(recordingDuration)}
-              </span>
+                <span className="text-white text-sm font-mono tabular-nums">
+                  {formatRecordingTime(recordingDuration)}
+                </span>
+              </div>
 
-              <span className="text-slate-500 text-xs ml-auto">
-                Max 05:00
+              <div className="flex items-center justify-center gap-[3px] flex-1 h-8 min-w-0 overflow-hidden">
+                {[12, 20, 15, 27, 18, 30, 14, 24, 32, 17, 26, 13, 22, 29, 16, 25, 12, 20, 28, 15].map(
+                  (height, index) => (
+                    <span
+                      key={index}
+                      className="w-[3px] rounded-full bg-red-400/80 animate-pulse"
+                      style={{
+                        height: `${height}px`,
+                        animationDelay: `${index * 70}ms`,
+                        animationDuration: `${500 + (index % 4) * 150}ms`,
+                      }}
+                    />
+                  )
+                )}
+              </div>
+
+              <span className="hidden sm:block text-[11px] text-slate-500 whitespace-nowrap">
+                / 05:00
               </span>
             </div>
           ) : (
@@ -554,7 +633,7 @@ function MessageInput() {
                 cursorPositionRef.current = e.target.selectionStart;
               }}
               placeholder="Type a message..."
-              className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg py-2 px-4 text-white placeholder:text-slate-400"
+              className="w-full bg-slate-800/50 border border-slate-700/50 rounded-xl py-3 px-4 text-sm text-white placeholder:text-slate-400 outline-none focus:border-cyan-500/50 transition-colors"
             />
           )}
         </div>
@@ -573,7 +652,7 @@ function MessageInput() {
             <button
               type="button"
               onClick={() => setShowEmojiPicker((prev) => !prev)}
-              className={`bg-slate-800/50 rounded-lg px-3 transition-colors ${
+              className={`shrink-0 bg-slate-800/70 rounded-xl p-3 transition-colors ${
                 showEmojiPicker
                   ? "text-cyan-400"
                   : "text-slate-400 hover:text-slate-200"
@@ -586,7 +665,7 @@ function MessageInput() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className={`bg-slate-800/50 text-slate-400 hover:text-slate-200 rounded-lg px-3 transition-colors ${
+              className={`shrink-0 bg-slate-800/70 text-slate-400 hover:text-slate-200 rounded-xl p-3 transition-colors ${
                 imagePreview ? "text-cyan-500" : ""
               }`}
               aria-label="Attach image"
@@ -598,7 +677,7 @@ function MessageInput() {
               type="button"
               onClick={startRecording}
               disabled={!!text.trim() || !!imagePreview}
-              className="bg-slate-800/50 text-slate-400 hover:text-red-400 rounded-lg px-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="shrink-0 bg-slate-800/70 text-slate-400 hover:text-red-400 rounded-xl p-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               aria-label="Record voice message"
               title="Record voice message"
             >
@@ -608,7 +687,7 @@ function MessageInput() {
             <button
               type="submit"
               disabled={!text.trim() && !imagePreview}
-              className="bg-gradient-to-r from-cyan-500 to-cyan-600 text-white rounded-lg px-4 py-2 font-medium hover:from-cyan-600 hover:to-cyan-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="shrink-0 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white rounded-xl p-3 hover:from-cyan-600 hover:to-cyan-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Send message"
             >
               <SendIcon className="w-5 h-5" />
@@ -621,7 +700,7 @@ function MessageInput() {
             <button
               type="button"
               onClick={cancelRecording}
-              className="bg-slate-800 text-red-400 hover:bg-red-500/10 rounded-lg px-3 transition-colors"
+              className="shrink-0 w-11 h-11 flex items-center justify-center bg-slate-800 text-red-400 hover:bg-red-500/10 border border-slate-700 rounded-full transition-colors"
               aria-label="Cancel recording"
               title="Cancel recording"
             >
@@ -631,11 +710,11 @@ function MessageInput() {
             <button
               type="button"
               onClick={stopRecording}
-              className="bg-gradient-to-r from-cyan-500 to-cyan-600 text-white rounded-lg px-4 py-2 hover:from-cyan-600 hover:to-cyan-700 transition-all"
+              className="shrink-0 w-11 h-11 flex items-center justify-center bg-gradient-to-r from-cyan-500 to-cyan-600 text-white rounded-full hover:from-cyan-600 hover:to-cyan-700 shadow-lg shadow-cyan-500/20 transition-all"
               aria-label="Stop and send voice message"
               title="Stop and send"
             >
-              <SquareIcon className="w-5 h-5" />
+              <SquareIcon className="w-4 h-4 fill-current" />
             </button>
           </>
         )}
