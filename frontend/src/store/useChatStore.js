@@ -877,6 +877,153 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
+    sendVoiceMessage: async (audioBlob, duration) => {
+        const { selectedUser, replyingTo } = get();
+        const { authUser } = useAuthStore.getState();
+
+        if (!selectedUser || !authUser || !audioBlob) return;
+
+        const replyToId = replyingTo?._id || null;
+        const tempId = `temp-voice-${Date.now()}`;
+
+        const extension = audioBlob.type.includes("mp4") ? "mp4" : "webm";
+        const audioFile = new File(
+            [audioBlob],
+            `voice-message.${extension}`,
+            { type: audioBlob.type || "audio/webm" }
+        );
+
+        const formData = new FormData();
+        formData.append("audio", audioFile);
+        formData.append("duration", String(duration));
+
+        if (replyToId) {
+            formData.append("replyTo", replyToId);
+        }
+
+        const optimisticMessage = {
+            _id: tempId,
+            senderId: authUser._id,
+            receiverId: selectedUser._id,
+            audio: {
+                duration,
+                mimeType: audioFile.type,
+            },
+            replyTo: replyingTo,
+            status: "sent",
+            createdAt: new Date().toISOString(),
+            isOptimistic: true,
+        };
+
+        set((state) => ({
+            messages: [...state.messages, optimisticMessage],
+        }));
+
+        try {
+            const res = await axiosInstance.post(
+                `/messages/voice/${selectedUser._id}`,
+                formData
+            );
+
+            set((state) => ({
+                messages: state.messages.map((message) =>
+                    message._id === tempId ? res.data : message
+                ),
+                replyingTo:
+                    state.replyingTo?._id === replyToId
+                        ? null
+                        : state.replyingTo,
+            }));
+
+            await get().getMyChatPartners();
+        } catch (error) {
+            set((state) => ({
+                messages: state.messages.filter(
+                    (message) => message._id !== tempId
+                ),
+            }));
+
+            toast.error(
+                error.response?.data?.message || "Unable to send voice message"
+            );
+        }
+    },
+
+    sendGroupVoiceMessage: async (audioBlob, duration) => {
+        const { selectedGroup, replyingTo } = get();
+        const { authUser } = useAuthStore.getState();
+
+        if (!selectedGroup || !authUser || !audioBlob) return;
+
+        const groupId = selectedGroup._id;
+        const replyToId = replyingTo?._id || null;
+        const tempId = `temp-group-voice-${Date.now()}`;
+
+        const extension = audioBlob.type.includes("mp4") ? "mp4" : "webm";
+        const audioFile = new File(
+            [audioBlob],
+            `group-voice-message.${extension}`,
+            { type: audioBlob.type || "audio/webm" }
+        );
+
+        const formData = new FormData();
+        formData.append("audio", audioFile);
+        formData.append("duration", String(duration));
+
+        if (replyToId) {
+            formData.append("replyTo", replyToId);
+        }
+
+        const optimisticMessage = {
+            _id: tempId,
+            messageType: "group",
+            groupId,
+            senderId: authUser,
+            audio: {
+                duration,
+                mimeType: audioFile.type,
+            },
+            replyTo: replyingTo,
+            readBy: [{ userId: authUser._id, readAt: new Date() }],
+            createdAt: new Date().toISOString(),
+            isOptimistic: true,
+        };
+
+        set((state) => ({
+            messages: [...state.messages, optimisticMessage],
+        }));
+
+        try {
+            const res = await axiosInstance.post(
+                `/messages/groups/${groupId}/voice`,
+                formData
+            );
+
+            const savedMessage = res.data.message || res.data;
+
+            set((state) => ({
+                messages: state.messages.map((message) =>
+                    message._id === tempId ? savedMessage : message
+                ),
+                replyingTo:
+                    state.replyingTo?._id === replyToId
+                        ? null
+                        : state.replyingTo,
+            }));
+        } catch (error) {
+            set((state) => ({
+                messages: state.messages.filter(
+                    (message) => message._id !== tempId
+                ),
+            }));
+
+            toast.error(
+                error.response?.data?.message ||
+                    "Unable to send group voice message"
+            );
+        }
+    },
+
     toggleReaction: async (messageId, emoji) => {
         try {
             const res = await axiosInstance.patch(

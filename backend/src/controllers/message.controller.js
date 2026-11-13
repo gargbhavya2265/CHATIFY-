@@ -5,11 +5,51 @@ import Message from "../models/message.js";
 import User from "../models/User.js";
 import Group from "../models/Group.js";
 import { sendPushNotification } from "../lib/pushService.js";
+import { Readable } from "node:stream";
 
 const isGroupMember = async (groupId, userId) => {
     return Group.exists({
         _id: groupId,
         "members.userId": userId,
+    });
+};
+
+
+const uploadAudioToCloudinary = (file) => {
+    return new Promise((resolve, reject) => {
+        const sourceStream = Readable.from(file.buffer);
+
+        const uploadStream = cloudinary.uploader.upload_stream(
+            {
+                resource_type: "video",
+                folder: "chatify/voice-messages",
+            },
+            (error, result) => {
+                if (error) {
+                    return reject(error);
+                }
+
+                if (!result?.secure_url || !result?.public_id) {
+                    return reject(
+                        new Error("Cloudinary returned an invalid upload result.")
+                    );
+                }
+
+                resolve({
+                    url: result.secure_url,
+                    publicId: result.public_id,
+                });
+            }
+        );
+
+        sourceStream.on("error", (error) => {
+            uploadStream.destroy(error);
+            reject(error);
+        });
+
+        uploadStream.on("error", reject);
+
+        sourceStream.pipe(uploadStream);
     });
 };
 
@@ -801,6 +841,7 @@ export const editMessage = async (req, res) => {
     }
 };
 
+
 export const deleteMessage = async (req, res) => {
     try {
         const { id: messageId } = req.params;
@@ -863,8 +904,12 @@ export const deleteMessage = async (req, res) => {
             }
         }
 
+        // Keep the Cloudinary public ID before removing audio metadata.
+        const audioPublicId = message.audio?.publicId;
+
         message.text = "This message was deleted";
         message.image = undefined;
+        message.audio = undefined;
         message.isDeleted = true;
         message.deletedAt = new Date();
         message.deletedBy = userId;
@@ -880,19 +925,38 @@ export const deleteMessage = async (req, res) => {
 
         emitMessageUpdate(message, "messageDeleted", update);
 
+        // Delete the actual audio from Cloudinary after the database save.
+        if (audioPublicId) {
+            try {
+                await cloudinary.uploader.destroy(
+                    audioPublicId,
+                    {
+                        resource_type: "video",
+                    }
+                );
+            } catch (cleanupError) {
+                console.error(
+                    "Voice message Cloudinary cleanup failed:",
+                    cleanupError.message
+                );
+            }
+        }
+
         return res.status(200).json({
             message: "Message deleted successfully.",
             updatedMessage: message,
         });
     } catch (error) {
-        console.log("Error in deleteMessage:", error.message);
+        console.error(
+            "Error in deleteMessage:",
+            error.message
+        );
 
         return res.status(500).json({
             error: "Internal server error",
         });
     }
 };
-
 
 export const searchMessages = async (req, res) => {
     try {
@@ -1216,6 +1280,275 @@ export const deleteChat = async (req, res) => {
 
         return res.status(500).json({
             message: "Internal server error.",
+        });
+    }
+};
+
+export const sendVoiceMessage = async (req, res) => {
+    let uploadedAudio = null;
+    let messageSaved = false;
+
+    try {
+        const { id: receiverId } = req.params;
+        const senderId = req.user._id;
+        const duration = Number(req.body.duration);
+        const audioFile = req.file;
+
+        if (!mongoose.Types.ObjectId.isValid(receiverId)) {
+            return res.status(400).json({
+                message: "Invalid receiver ID.",
+            });
+        }
+
+        if (senderId.equals(receiverId)) {
+            return res.status(400).json({
+                message: "Cannot send voice messages to yourself.",
+            });
+        }
+
+        if (!audioFile) {
+            return res.status(400).json({
+                message: "Audio file is required.",
+            });
+        }
+
+        if (
+            !Number.isFinite(duration) ||
+            duration <= 0 ||
+            duration > 300
+        ) {
+            return res.status(400).json({
+                message: "Voice message duration must be between 1 and 300 seconds.",
+            });
+        }
+
+        const receiverExists = await User.exists({
+            _id: receiverId,
+        });
+
+        if (!receiverExists) {
+            return res.status(404).json({
+                message: "Receiver not found.",
+            });
+        }
+
+        uploadedAudio = await uploadAudioToCloudinary(audioFile);
+
+        const newMessage = new Message({
+            messageType: "direct",
+            senderId,
+            receiverId,
+            audio: {
+                url: uploadedAudio.url,
+                publicId: uploadedAudio.publicId,
+                duration,
+                mimeType: audioFile.mimetype
+                    .split(";")[0]
+                    .trim()
+                    .toLowerCase(),
+                fileSize: audioFile.size,
+            },
+        });
+
+        await newMessage.save();
+        messageSaved = true;
+
+        const receiverSocketId = getReceiverSocketId(receiverId);
+
+        if (receiverSocketId) {
+            try {
+                newMessage.status = "delivered";
+                newMessage.deliveredAt = new Date();
+
+                await newMessage.save();
+
+                io.to(receiverSocketId).emit(
+                    "newMessage",
+                    newMessage
+                );
+            } catch (deliveryError) {
+                console.error(
+                    "Voice message delivery update failed:",
+                    deliveryError.message
+                );
+            }
+        }
+
+        try {
+            await sendPushNotification(receiverId, {
+                title: req.user.fullName,
+                body: "Sent you a voice message",
+                icon: req.user.profilePic || "/avatar.png",
+                senderId: senderId.toString(),
+                url: `/?chat=${senderId.toString()}`,
+            });
+        } catch (notificationError) {
+            console.error(
+                "Voice message push notification failed:",
+                notificationError.message
+            );
+        }
+
+        return res.status(201).json(newMessage);
+    } catch (error) {
+        console.error(
+            "Error in sendVoiceMessage:",
+            error.message
+        );
+
+        if (uploadedAudio?.publicId && !messageSaved) {
+            try {
+                await cloudinary.uploader.destroy(
+                    uploadedAudio.publicId,
+                    { resource_type: "video" }
+                );
+            } catch (cleanupError) {
+                console.error(
+                    "Voice upload cleanup failed:",
+                    cleanupError.message
+                );
+            }
+        }
+
+        return res.status(500).json({
+            message: "Failed to send voice message.",
+        });
+    }
+};
+
+export const sendGroupVoiceMessage = async (req, res) => {
+    let uploadedAudio = null;
+    let messageSaved = false;
+
+    try {
+        const { id: groupId } = req.params;
+        const { replyTo } = req.body;
+        const senderId = req.user._id;
+        const duration = Number(req.body.duration);
+        const audioFile = req.file;
+
+        if (!mongoose.Types.ObjectId.isValid(groupId)) {
+            return res.status(400).json({
+                message: "Invalid group ID.",
+            });
+        }
+
+        if (!audioFile) {
+            return res.status(400).json({
+                message: "Audio file is required.",
+            });
+        }
+
+        if (
+            !Number.isFinite(duration) ||
+            duration <= 0 ||
+            duration > 300
+        ) {
+            return res.status(400).json({
+                message: "Voice message duration must be between 1 and 300 seconds.",
+            });
+        }
+
+        const group = await Group.findOne({
+            _id: groupId,
+            "members.userId": senderId,
+        });
+
+        if (!group) {
+            return res.status(403).json({
+                message: "You are not an active member of this group.",
+            });
+        }
+
+        let originalMessage = null;
+
+        if (replyTo) {
+            if (!mongoose.Types.ObjectId.isValid(replyTo)) {
+                return res.status(400).json({
+                    message: "Invalid reply message ID.",
+                });
+            }
+
+            originalMessage = await Message.findOne({
+                _id: replyTo,
+                messageType: "group",
+                groupId,
+            });
+
+            if (!originalMessage) {
+                return res.status(404).json({
+                    message: "Original message not found in this group.",
+                });
+            }
+        }
+
+        uploadedAudio = await uploadAudioToCloudinary(audioFile);
+
+        const newMessage = new Message({
+            messageType: "group",
+            senderId,
+            groupId,
+            audio: {
+                url: uploadedAudio.url,
+                publicId: uploadedAudio.publicId,
+                duration,
+                mimeType: audioFile.mimetype
+                    .split(";")[0]
+                    .trim()
+                    .toLowerCase(),
+                fileSize: audioFile.size,
+            },
+            replyTo: originalMessage?._id || null,
+            readBy: [
+                {
+                    userId: senderId,
+                    readAt: new Date(),
+                },
+            ],
+        });
+
+        await newMessage.save();
+        messageSaved = true;
+
+        await newMessage.populate([
+            {
+                path: "senderId",
+                select: "fullName profilePic",
+            },
+            {
+                path: "replyTo",
+                select: "text image audio senderId",
+            },
+        ]);
+
+        io.to(groupId.toString()).emit(
+            "newGroupMessage",
+            newMessage
+        );
+
+        return res.status(201).json(newMessage);
+    } catch (error) {
+        console.error(
+            "Error in sendGroupVoiceMessage:",
+            error.message
+        );
+
+        if (uploadedAudio?.publicId && !messageSaved) {
+            try {
+                await cloudinary.uploader.destroy(
+                    uploadedAudio.publicId,
+                    { resource_type: "video" }
+                );
+            } catch (cleanupError) {
+                console.error(
+                    "Group voice upload cleanup failed:",
+                    cleanupError.message
+                );
+            }
+        }
+
+        return res.status(500).json({
+            message: "Failed to send group voice message.",
         });
     }
 };

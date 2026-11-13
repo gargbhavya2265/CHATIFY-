@@ -13,9 +13,12 @@ import {
   searchMessages,
   getGroupMessages,
   sendGroupMessage,
+  sendVoiceMessage,
+  sendGroupVoiceMessage,
 } from "../controllers/message.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 import { arcjetProtection } from "../middleware/arcjet.middleware.js";
+import { uploadVoiceMessage } from "../middleware/upload.middleware.js";
 
 const router = express.Router();
 
@@ -28,6 +31,7 @@ router.delete("/chats/:id", deleteChat);
 // Group messaging routes
 router.get("/groups/:id", getGroupMessages);
 router.post("/groups/:id", sendGroupMessage);
+router.post("/groups/:id/voice",uploadVoiceMessage,sendGroupVoiceMessage);
 
 // Message search route
 router.get("/search", searchMessages);
@@ -39,5 +43,6 @@ router.patch("/:id/read", markMessageAsRead);
 router.patch("/:id/reaction", toggleMessageReaction);
 router.patch("/:id", editMessage);
 router.delete("/:id", deleteMessage);
+router.post("/voice/:id",uploadVoiceMessage,sendVoiceMessage);
 
 export default router;

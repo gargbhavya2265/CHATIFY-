@@ -270,6 +270,13 @@ function ChatContainer() {
                 <span className="text-xs opacity-80">Photo</span>
               </div>
             )}
+
+            {replyTo.audio && (
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-sm">🎤</span>
+                <span className="text-xs opacity-80">Voice message</span>
+              </div>
+            )}
           </>
         )}
       </button>
@@ -437,8 +444,8 @@ function ChatContainer() {
                           isDeleted
                             ? "bg-slate-700/70 text-slate-300"
                             : isOwnMessage
-                            ? "bg-cyan-600 text-white"
-                            : "bg-slate-800 text-slate-200"
+                              ? "bg-cyan-600 text-white"
+                              : "bg-slate-800 text-slate-200"
                         }`}
                       >
                         {msg.replyTo && renderReplyPreview(msg.replyTo)}
@@ -498,6 +505,26 @@ function ChatContainer() {
                                 alt="Shared"
                                 className="rounded-lg h-48 object-cover"
                               />
+                            )}
+
+                            {msg.audio?.url && (
+                              <div className="my-2 min-w-[220px] max-w-full">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-sm">🎤</span>
+                                  <span className="text-xs font-medium">
+                                    Voice message
+                                  </span>
+                                </div>
+
+                                <audio
+                                  controls
+                                  preload="metadata"
+                                  src={msg.audio.url}
+                                  className="w-full max-w-[280px] h-10"
+                                >
+                                  Your browser does not support audio playback.
+                                </audio>
+                              </div>
                             )}
 
                             {msg.text && (
