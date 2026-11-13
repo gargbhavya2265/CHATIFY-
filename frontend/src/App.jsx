@@ -10,9 +10,11 @@ import UserProfileModal from "./components/UserProfileModal";
 
 import { useAuthStore } from "./store/useAuthStore";
 import { useChatStore } from "./store/useChatStore";
+import { useThemeStore } from "./store/useThemeStore";
 
 function App() {
     const { checkAuth, isCheckingAuth, authUser, socket } = useAuthStore();
+    const theme = useThemeStore((state) => state.theme);
 
     const {
         viewingProfile,
@@ -207,7 +209,10 @@ function App() {
     if (isCheckingAuth) return <PageLoader />;
 
     return (
-        <div className="min-h-screen bg-slate-900 relative flex items-center justify-center p-4 overflow-hidden">
+        <div
+            data-theme={theme}
+            className="min-h-screen bg-slate-900 relative flex items-center justify-center p-4 overflow-hidden"
+        >
             <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:14px_24px]" />
 
             <div className="absolute top-0 -left-4 size-96 bg-pink-500 opacity-20 blur-[100px]" />
@@ -249,7 +254,9 @@ function App() {
                 />
             </Routes>
 
-            <UserProfileModal key={viewingProfile?._id?.toString() || "closed"}/>
+            <UserProfileModal
+                key={viewingProfile?._id?.toString() || "closed"}
+            />
 
             <Toaster />
         </div>

@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from "react";
 import {
   LogOutIcon,
@@ -12,6 +11,7 @@ import {
   Trash2Icon,
   SaveIcon,
   MoreVerticalIcon,
+  PaletteIcon,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -23,6 +23,8 @@ import {
   disablePushNotifications,
 } from "../lib/pushNotifications";
 
+import AppearanceModal from "./AppearanceModal";
+
 const mouseClickSound = new Audio("/sounds/mouse-click.mp3");
 
 function ProfileHeader() {
@@ -33,6 +35,7 @@ function ProfileHeader() {
   const [isPushLoading, setIsPushLoading] = useState(false);
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isAppearanceModalOpen, setIsAppearanceModalOpen] = useState(false);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -298,6 +301,18 @@ function ProfileHeader() {
                   type="button"
                   onClick={() => {
                     setIsMenuOpen(false);
+                    setIsAppearanceModalOpen(true);
+                  }}
+                  className={menuItemClass}
+                >
+                  <PaletteIcon className="size-4 shrink-0" />
+                  <span>Appearance</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
                     handlePushToggle();
                   }}
                   disabled={isPushLoading}
@@ -349,6 +364,11 @@ function ProfileHeader() {
           </div>
         </div>
       </div>
+
+      <AppearanceModal
+        isOpen={isAppearanceModalOpen}
+        onClose={() => setIsAppearanceModalOpen(false)}
+      />
 
       {isEditModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">

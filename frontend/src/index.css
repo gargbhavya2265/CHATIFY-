@@ -147,3 +147,396 @@ body { background: #070912; color: #edf0ff; }
   .chatify-sidebar { width: 112px !important; }
   .chatify-sidebar-content { padding:8px !important; }
 }
+/* ==========================================
+   CHATIFY THEME SYSTEM
+   ========================================== */
+:root {
+  --app-bg: #070912;
+  --surface-primary: #141427;
+  --surface-secondary: #121125;
+  --surface-tertiary: #050714;
+  --text-primary: #edf0ff;
+  --text-secondary: #9294ad;
+  --text-muted: #777991;
+  --border-color: rgba(167, 139, 250, .20);
+  --accent-primary: #8b5cf6;
+  --accent-secondary: #6366f1;
+  --accent-soft: rgba(139, 92, 246, .12);
+  --incoming-message: #1f213a;
+  --outgoing-message: #6941c6;
+  --input-bg: rgba(5, 7, 20, .68);
+  --scrollbar-thumb: rgba(139, 125, 190, .34);
+  --glow-primary: rgba(124, 58, 237, .20);
+  --glow-secondary: rgba(79, 70, 229, .15);
+  color-scheme: dark;
+}
+[data-theme="midnight"] {
+  color-scheme: dark;
+}
+[data-theme="light"] {
+  --app-bg: #f1f5f9;
+  --surface-primary: #ffffff;
+  --surface-secondary: #f8fafc;
+  --surface-tertiary: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --border-color: rgba(100, 116, 139, .22);
+  --accent-primary: #7c3aed;
+  --accent-secondary: #4f46e5;
+  --accent-soft: rgba(124, 58, 237, .10);
+  --incoming-message: #e2e8f0;
+  --outgoing-message: #7c3aed;
+  --input-bg: #f8fafc;
+  --scrollbar-thumb: rgba(100, 116, 139, .35);
+  --glow-primary: rgba(139, 92, 246, .10);
+  --glow-secondary: rgba(59, 130, 246, .08);
+  color-scheme: light;
+}
+[data-theme="amoled"] {
+  --app-bg: #000000;
+  --surface-primary: #090909;
+  --surface-secondary: #050505;
+  --surface-tertiary: #111111;
+  --text-primary: #ffffff;
+  --text-secondary: #b3b3b3;
+  --text-muted: #808080;
+  --border-color: rgba(255, 255, 255, .12);
+  --accent-primary: #a855f7;
+  --accent-secondary: #7c3aed;
+  --accent-soft: rgba(168, 85, 247, .12);
+  --incoming-message: #171717;
+  --outgoing-message: #6d28d9;
+  --input-bg: #080808;
+  --scrollbar-thumb: rgba(255, 255, 255, .22);
+  --glow-primary: rgba(109, 40, 217, .12);
+  --glow-secondary: rgba(79, 70, 229, .08);
+  color-scheme: dark;
+}
+[data-theme="lavender"] {
+  --app-bg: #171124;
+  --surface-primary: #241b38;
+  --surface-secondary: #20182f;
+  --surface-tertiary: #302342;
+  --text-primary: #f3e8ff;
+  --text-secondary: #d8b4fe;
+  --text-muted: #b39acb;
+  --border-color: rgba(216, 180, 254, .20);
+  --accent-primary: #c084fc;
+  --accent-secondary: #a855f7;
+  --accent-soft: rgba(192, 132, 252, .14);
+  --incoming-message: #35264a;
+  --outgoing-message: #9333ea;
+  --input-bg: #1b1428;
+  --scrollbar-thumb: rgba(216, 180, 254, .30);
+  --glow-primary: rgba(192, 132, 252, .16);
+  --glow-secondary: rgba(147, 51, 234, .12);
+  color-scheme: dark;
+}
+[data-theme="ocean"] {
+  --app-bg: #071c2b;
+  --surface-primary: #0c2b40;
+  --surface-secondary: #092438;
+  --surface-tertiary: #12364d;
+  --text-primary: #e0f2fe;
+  --text-secondary: #bae6fd;
+  --text-muted: #7dd3fc;
+  --border-color: rgba(125, 211, 252, .20);
+  --accent-primary: #0ea5e9;
+  --accent-secondary: #0284c7;
+  --accent-soft: rgba(14, 165, 233, .14);
+  --incoming-message: #16415a;
+  --outgoing-message: #0369a1;
+  --input-bg: #092438;
+  --scrollbar-thumb: rgba(125, 211, 252, .30);
+  --glow-primary: rgba(14, 165, 233, .16);
+  --glow-secondary: rgba(6, 182, 212, .10);
+  color-scheme: dark;
+}
+[data-theme="forest"] {
+  --app-bg: #0c1c15;
+  --surface-primary: #172b20;
+  --surface-secondary: #14251c;
+  --surface-tertiary: #20382a;
+  --text-primary: #ecfdf5;
+  --text-secondary: #bbf7d0;
+  --text-muted: #86efac;
+  --border-color: rgba(134, 239, 172, .19);
+  --accent-primary: #22c55e;
+  --accent-secondary: #16a34a;
+  --accent-soft: rgba(34, 197, 94, .13);
+  --incoming-message: #294332;
+  --outgoing-message: #15803d;
+  --input-bg: #14251c;
+  --scrollbar-thumb: rgba(134, 239, 172, .28);
+  --glow-primary: rgba(34, 197, 94, .13);
+  --glow-secondary: rgba(16, 185, 129, .09);
+  color-scheme: dark;
+}
+
+/* ==========================================
+   CHATIFY GLOBAL THEME OVERRIDES
+   Midnight remains unchanged.
+   ========================================== */
+
+/* Application background */
+[data-theme]:not([data-theme="midnight"]) {
+  min-height: 100vh;
+  background-color: var(--app-bg) !important;
+  color: var(--text-primary);
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-shell {
+  background:
+    radial-gradient(ellipse at 12% 8%, var(--glow-primary), transparent 32%),
+    radial-gradient(ellipse at 88% 90%, var(--glow-secondary), transparent 34%),
+    var(--app-bg) !important;
+}
+
+/* Main application frame */
+[data-theme]:not([data-theme="midnight"]) .chatify-frame {
+  background: var(--surface-primary) !important;
+  border-color: var(--border-color) !important;
+  box-shadow:
+    0 30px 100px rgba(0, 0, 0, 0.25),
+    0 0 0 1px var(--border-color) inset,
+    0 0 60px var(--glow-primary) !important;
+}
+
+/* Sidebar */
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar {
+  background: var(--surface-secondary) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .border-b,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .border-t {
+  border-color: var(--border-color) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .text-slate-100,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .text-slate-200,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .text-white {
+  color: var(--text-primary) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .text-slate-300,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .text-slate-400 {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .text-slate-500 {
+  color: var(--text-muted) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .bg-slate-900,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .bg-slate-950,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .bg-slate-800 {
+  background: var(--surface-tertiary) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .border-slate-700 {
+  border-color: var(--border-color) !important;
+}
+
+/* Sidebar navigation tabs */
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .tabs {
+  background: var(--surface-tertiary) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .tab[class*="bg-cyan"] {
+  background: var(--accent-soft) !important;
+  color: var(--accent-primary) !important;
+  box-shadow: none !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar button:hover {
+  background-color: var(--accent-soft);
+}
+
+/* Sidebar inputs */
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar input,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar textarea,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar select {
+  background: var(--input-bg) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar input::placeholder,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar textarea::placeholder {
+  color: var(--text-muted) !important;
+}
+
+/* Main conversation area */
+[data-theme]:not([data-theme="midnight"]) .chatify-main {
+  background: var(--surface-secondary) !important;
+}
+
+/* Conversation header */
+[data-theme]:not([data-theme="midnight"]) .chatify-chat-header {
+  background: var(--surface-primary) !important;
+  border-color: var(--border-color) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-chat-header .text-slate-100,
+[data-theme]:not([data-theme="midnight"]) .chatify-chat-header .text-slate-200,
+[data-theme]:not([data-theme="midnight"]) .chatify-chat-header .text-white {
+  color: var(--text-primary) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-chat-header .text-slate-400,
+[data-theme]:not([data-theme="midnight"]) .chatify-chat-header .text-slate-500 {
+  color: var(--text-secondary) !important;
+}
+
+/* Message bubbles */
+[data-theme]:not([data-theme="midnight"]) .chatify-main .chat-bubble {
+  border-color: var(--border-color) !important;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-main .chat-start .chat-bubble,
+[data-theme]:not([data-theme="midnight"]) .chatify-main .chat-bubble[class*="bg-slate"] {
+  background: var(--incoming-message) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-main .chat-end .chat-bubble,
+[data-theme]:not([data-theme="midnight"]) .chatify-main .chat-bubble[class*="bg-cyan"] {
+  background: var(--outgoing-message) !important;
+  border-color: var(--accent-primary) !important;
+  color: #ffffff !important;
+}
+
+/* Other message surfaces */
+[data-theme]:not([data-theme="midnight"]) .chatify-main .bg-slate-800\/90,
+[data-theme]:not([data-theme="midnight"]) .chatify-main .bg-slate-800\/50 {
+  background: var(--surface-tertiary) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-main .border-slate-700\/50,
+[data-theme]:not([data-theme="midnight"]) .chatify-main .border-cyan-500\/50 {
+  border-color: var(--border-color) !important;
+}
+
+/* Main conversation text */
+[data-theme]:not([data-theme="midnight"]) .chatify-main .text-slate-100,
+[data-theme]:not([data-theme="midnight"]) .chatify-main .text-slate-200,
+[data-theme]:not([data-theme="midnight"]) .chatify-main .text-white {
+  color: var(--text-primary) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-main .text-slate-300,
+[data-theme]:not([data-theme="midnight"]) .chatify-main .text-slate-400 {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-main .text-slate-500 {
+  color: var(--text-muted) !important;
+}
+
+/* Composer */
+[data-theme]:not([data-theme="midnight"]) .chatify-main textarea,
+[data-theme]:not([data-theme="midnight"]) .chatify-main input:not([type="file"]) {
+  background: var(--input-bg) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-main textarea::placeholder,
+[data-theme]:not([data-theme="midnight"]) .chatify-main input::placeholder {
+  color: var(--text-muted) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-main textarea:focus {
+  border-color: var(--accent-primary) !important;
+  box-shadow: 0 0 0 3px var(--accent-soft) !important;
+}
+
+/* Accent buttons */
+[data-theme]:not([data-theme="midnight"]) .chatify-main button[class*="bg-gradient-to-r"],
+[data-theme]:not([data-theme="midnight"]) .chatify-main button[class*="bg-cyan-600"],
+[data-theme]:not([data-theme="midnight"]) .chatify-main button[class*="bg-cyan-500"],
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .bg-cyan-500,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .bg-cyan-600 {
+  background: var(--accent-primary) !important;
+  color: #ffffff !important;
+}
+
+/* Global modal and popover surfaces */
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar [class*="bg-slate-900"],
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar [class*="bg-slate-950"],
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar [class*="bg-slate-800"] {
+  border-color: var(--border-color);
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .absolute.z-50 {
+  background: var(--surface-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .fixed.z-\[70\] > div {
+  background: var(--surface-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .fixed.z-\[70\] h2,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .fixed.z-\[70\] h3,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .fixed.z-\[70\] span,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .fixed.z-\[70\] p {
+  color: var(--text-primary);
+}
+
+/* Theme modal selected state */
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .fixed.z-\[70\] button {
+  border-color: var(--border-color);
+}
+
+/* Accent links and indicators */
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .text-cyan-400,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar .text-cyan-300,
+[data-theme]:not([data-theme="midnight"]) .chatify-main .text-cyan-400,
+[data-theme]:not([data-theme="midnight"]) .chatify-main .text-cyan-300 {
+  color: var(--accent-primary) !important;
+}
+
+/* Scrollbars */
+[data-theme]:not([data-theme="midnight"]) * {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+[data-theme]:not([data-theme="midnight"]) *::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+}
+
+[data-theme]:not([data-theme="midnight"]) *::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-primary);
+}
+
+/* Auth screen inputs and labels */
+[data-theme="light"] .input {
+  background: var(--input-bg) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme="light"] .auth-input-label {
+  color: var(--text-secondary) !important;
+}
+
+/* Smooth transitions between themes */
+[data-theme]:not([data-theme="midnight"]) .chatify-frame,
+[data-theme]:not([data-theme="midnight"]) .chatify-sidebar,
+[data-theme]:not([data-theme="midnight"]) .chatify-main,
+[data-theme]:not([data-theme="midnight"]) .chatify-chat-header,
+[data-theme]:not([data-theme="midnight"]) .chat-bubble {
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    color 0.25s ease;
+}
