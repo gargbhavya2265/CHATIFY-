@@ -1552,3 +1552,354 @@ export const sendGroupVoiceMessage = async (req, res) => {
         });
     }
 };
+
+export const forwardMessage = async (req, res) => {
+    const uploadedMedia = [];
+    const savedMessages = [];
+    const socketEvents = [];
+
+    try {
+        const senderId = req.user._id;
+        const { messageId, destinations } = req.body;
+
+        // Validate source message ID.
+        if (!mongoose.Types.ObjectId.isValid(messageId)) {
+            return res.status(400).json({
+                message: "Invalid message ID.",
+            });
+        }
+
+        // Validate destination count.
+        if (
+            !Array.isArray(destinations) ||
+            destinations.length === 0 ||
+            destinations.length > 20
+        ) {
+            return res.status(400).json({
+                message: "Select between 1 and 20 destinations.",
+            });
+        }
+
+        // Validate and normalize destinations.
+        const normalizedDestinations = [];
+        const destinationKeys = new Set();
+
+        for (const destination of destinations) {
+            if (
+                !destination ||
+                !["direct", "group"].includes(destination.type) ||
+                !mongoose.Types.ObjectId.isValid(destination.id)
+            ) {
+                return res.status(400).json({
+                    message: "Invalid destination.",
+                });
+            }
+
+            const key = `${destination.type}:${destination.id}`;
+
+            if (destinationKeys.has(key)) {
+                return res.status(400).json({
+                    message: "Duplicate destinations are not allowed.",
+                });
+            }
+
+            destinationKeys.add(key);
+
+            normalizedDestinations.push({
+                type: destination.type,
+                id: new mongoose.Types.ObjectId(destination.id),
+            });
+        }
+
+        // Find original message.
+        const source = await Message.findById(messageId);
+
+        if (!source) {
+            return res.status(404).json({
+                message: "Message not found.",
+            });
+        }
+
+        // Check whether this message can be forwarded.
+        if (
+            source.isDeleted ||
+            source.isSystemMessage ||
+            source.hiddenFor.some(
+                (id) => id.toString() === senderId.toString()
+            )
+        ) {
+            return res.status(403).json({
+                message: "This message cannot be forwarded.",
+            });
+        }
+
+        // Verify that the current user can access the source message.
+        if (source.messageType === "direct") {
+            const isParticipant =
+                source.senderId.toString() === senderId.toString() ||
+                source.receiverId.toString() === senderId.toString();
+
+            if (!isParticipant) {
+                return res.status(403).json({
+                    message: "You cannot forward this message.",
+                });
+            }
+        } else if (source.messageType === "group") {
+            const membership = await getGroupMembership(
+                source.groupId,
+                senderId
+            );
+
+            if (!membership) {
+                return res.status(403).json({
+                    message: "You cannot access this message.",
+                });
+            }
+        } else {
+            return res.status(400).json({
+                message: "Unsupported message type.",
+            });
+        }
+
+        // Check whether the source contains forwardable content.
+        if (!source.text && !source.image && !source.audio?.url) {
+            return res.status(400).json({
+                message: "This message has no forwardable content.",
+            });
+        }
+
+        // Preserve the original sender when forwarding an already
+        // forwarded message.
+        const originalSender = source.forwardedFrom
+            ? {
+                  messageId: source.forwardedFrom.messageId,
+                  senderId: source.forwardedFrom.senderId,
+                  senderName: source.forwardedFrom.senderName,
+                  senderProfilePic:
+                      source.forwardedFrom.senderProfilePic || "",
+              }
+            : await User.findById(source.senderId)
+                  .select("fullName profilePic")
+                  .then((user) =>
+                      user
+                          ? {
+                                messageId: source._id,
+                                senderId: user._id,
+                                senderName: user.fullName,
+                                senderProfilePic: user.profilePic || "",
+                            }
+                          : null
+                  );
+
+        if (!originalSender) {
+            return res.status(400).json({
+                message: "Original sender information is unavailable.",
+            });
+        }
+
+        // Validate every destination before uploading or saving anything.
+        for (const destination of normalizedDestinations) {
+            if (destination.type === "direct") {
+                if (destination.id.equals(senderId)) {
+                    return res.status(400).json({
+                        message: "You cannot forward a message to yourself.",
+                    });
+                }
+
+                const recipientExists = await User.exists({
+                    _id: destination.id,
+                });
+
+                if (!recipientExists) {
+                    return res.status(404).json({
+                        message: "A selected contact was not found.",
+                    });
+                }
+            } else {
+                const activeMembership = await Group.exists({
+                    _id: destination.id,
+                    "members.userId": senderId,
+                });
+
+                if (!activeMembership) {
+                    return res.status(403).json({
+                        message:
+                            "You must be an active member of every selected group.",
+                    });
+                }
+            }
+        }
+
+        // Create and save all forwarded messages first.
+        // Socket events are emitted only after every save succeeds.
+        for (const destination of normalizedDestinations) {
+            let imageUrl;
+            let audio;
+
+            // Upload an independent image for each destination.
+            if (source.image) {
+                const imageUpload = await cloudinary.uploader.upload(
+                    source.image
+                );
+
+                uploadedMedia.push({
+                    publicId: imageUpload.public_id,
+                    resourceType: "image",
+                });
+
+                imageUrl = imageUpload.secure_url;
+            }
+
+            // Upload an independent voice asset for each destination.
+            if (source.audio?.url) {
+                const audioUpload = await cloudinary.uploader.upload(
+                    source.audio.url,
+                    {
+                        resource_type: "video",
+                        folder: "chatify/voice-messages",
+                    }
+                );
+
+                uploadedMedia.push({
+                    publicId: audioUpload.public_id,
+                    resourceType: "video",
+                });
+
+                audio = {
+                    url: audioUpload.secure_url,
+                    publicId: audioUpload.public_id,
+                    duration: source.audio.duration,
+                    mimeType: source.audio.mimeType,
+                    fileSize: source.audio.fileSize,
+                };
+            }
+
+            const messageData = {
+                messageType: destination.type,
+                senderId,
+                text: source.text,
+                image: imageUrl,
+                audio,
+                forwardedFrom: originalSender,
+            };
+
+            let receiverSocketId = null;
+
+            if (destination.type === "direct") {
+                messageData.receiverId = destination.id;
+
+                // Check whether the recipient is currently online.
+                receiverSocketId = getReceiverSocketId(
+                    destination.id.toString()
+                );
+
+                // Match the existing direct-message delivery behavior.
+                if (receiverSocketId) {
+                    messageData.status = "delivered";
+                    messageData.deliveredAt = new Date();
+                }
+            } else {
+                messageData.groupId = destination.id;
+                messageData.readBy = [
+                    {
+                        userId: senderId,
+                        readAt: new Date(),
+                    },
+                ];
+            }
+
+            const forwardedMessage = new Message(messageData);
+
+            await forwardedMessage.save();
+
+            // Track immediately so rollback can remove this message
+            // even if population fails afterward.
+            savedMessages.push(forwardedMessage);
+
+            await forwardedMessage.populate([
+                {
+                    path: "senderId",
+                    select: "fullName profilePic",
+                },
+                {
+                    path: "forwardedFrom.senderId",
+                    select: "fullName profilePic",
+                },
+            ]);
+
+            // Store socket events instead of emitting immediately.
+            socketEvents.push({
+                type: destination.type,
+                destinationId: destination.id.toString(),
+                receiverSocketId,
+                message: forwardedMessage,
+            });
+        }
+
+        // All messages have now been saved and populated successfully.
+        // It is safe to notify recipients.
+        for (const event of socketEvents) {
+            if (event.type === "direct") {
+                // Notify the recipient only if they are online.
+                if (event.receiverSocketId) {
+                    io.to(event.receiverSocketId).emit(
+                        "newMessage",
+                        event.message
+                    );
+                }
+
+                // Always notify the sender.
+                io.to(senderId.toString()).emit(
+                    "newMessage",
+                    event.message
+                );
+            } else {
+                io.to(event.destinationId).emit(
+                    "newGroupMessage",
+                    event.message
+                );
+            }
+        }
+
+        return res.status(201).json({
+            message: "Message forwarded successfully.",
+            forwardedMessages: savedMessages,
+        });
+    } catch (error) {
+        console.error("Error in forwardMessage:", error.message);
+
+        // Roll back all messages created during this forwarding operation.
+        if (savedMessages.length > 0) {
+            await Message.deleteMany({
+                _id: {
+                    $in: savedMessages.map((message) => message._id),
+                },
+            }).catch((cleanupError) => {
+                console.error(
+                    "Forwarded message rollback failed:",
+                    cleanupError.message
+                );
+            });
+        }
+
+        // Remove all independently uploaded Cloudinary assets.
+        await Promise.all(
+            uploadedMedia.map((media) =>
+                cloudinary.uploader
+                    .destroy(media.publicId, {
+                        resource_type: media.resourceType,
+                    })
+                    .catch((cleanupError) => {
+                        console.error(
+                            "Forwarded media cleanup failed:",
+                            cleanupError.message
+                        );
+                    })
+            )
+        );
+
+        return res.status(500).json({
+            message: "Failed to forward message.",
+        });
+    }
+};

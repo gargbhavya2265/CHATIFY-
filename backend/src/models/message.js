@@ -61,6 +61,30 @@ const audioSchema = new mongoose.Schema(
     { _id: false }
 );
 
+const forwardedFromSchema = new mongoose.Schema(
+    {
+        messageId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Message",
+            required: true,
+        },
+        senderId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            required: true,
+        },
+        senderName: {
+            type: String,
+            required: true,
+        },
+        senderProfilePic: {
+            type: String,
+            default: "",
+        },
+    },
+    { _id: false }
+);
+
 const messageSchema = new mongoose.Schema(
     {
         messageType: {
@@ -113,6 +137,10 @@ const messageSchema = new mongoose.Schema(
         },
         audio: {
             type: audioSchema,
+            default: undefined,
+        },
+        forwardedFrom: {
+            type: forwardedFromSchema,
             default: undefined,
         },
         isEdited: {
